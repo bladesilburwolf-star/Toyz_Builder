@@ -1,0 +1,15 @@
+Minecraft like Toybox builder project in C code:
+ I am using Visual Studio 22 to build and will test each build myself. We are already far into the project but it needs alot of fine tuning:
+ Needs:
+ -Options menu 
+ -Third person camera 
+ -Resolution controls 
+ -Cursor needs to stay in the window
+ -The camera left and right are inverted and should not be.
+ -Build pieces need to be easy to rotate and stack.
+ -Vertex shading and textures
+ -Better trees add to the landscape 
+ -Expanding the terrain to more biomes and overall Minecraft size feeling.
+ -Skybox selection
+ -Light Post-Processing
+ -Indoor and Outdoor Maps
