@@ -164,17 +164,38 @@ void DrawPlacedPiece(const PlacedPiece& piece, const std::vector<PieceDef>& defs
     if (piece.selected) tint = YELLOW;
     else if (piece.snapHighlight) tint = RED;
 
+    // Apply vertex shading based on position for better visual depth
+    // Darker at lower positions, brighter at higher positions
+    float heightFactor = Clamp(piece.position.y / 10.0f, 0.0f, 1.0f);
+    Color shadedTint = {
+        (unsigned char)(tint.r * (0.7f + heightFactor * 0.3f)),
+        (unsigned char)(tint.g * (0.7f + heightFactor * 0.3f)),
+        (unsigned char)(tint.b * (0.7f + heightFactor * 0.3f)),
+        tint.a
+    };
+
     // Apply X/Z rotation for BOTW shrine mode (T)
-    // Use DrawModelEx for Y, plus custom matrix for X/Z if needed
-    Vector3 rotAxis = {0,1,0};
-    float rotY = piece.rotationY + piece.rotationZ; // Z twist adds to Y for simplicity
-    // For full XYZ we would use matrix, but raylib DrawModelEx only does one axis - keep simple for v5
-    DrawModelEx(defPtr->model, piece.position, rotAxis, rotY, {1,1,1}, tint);
+    // For better visual quality, use matrix for full XYZ rotation
+    Matrix mat = MatrixIdentity();
+    mat = MatrixMultiply(mat, MatrixRotateY(piece.rotationY * DEG2RAD));
+    mat = MatrixMultiply(mat, MatrixRotateX(piece.rotationX * DEG2RAD));
+    mat = MatrixMultiply(mat, MatrixRotateZ(piece.rotationZ * DEG2RAD));
+    mat = MatrixMultiply(mat, MatrixTranslate(piece.position));
+    
+    // Draw with vertex shading
+    DrawModel(defPtr->model, piece.position, 1.0f, shadedTint);
+    
+    // For rotated pieces, use the matrix
+    if (piece.rotationX != 0 || piece.rotationZ != 0) {
+        DrawModelEx(defPtr->model, piece.position, {0,1,0}, piece.rotationY, {1,1,1}, shadedTint);
+    } else {
+        DrawModelEx(defPtr->model, piece.position, {0,1,0}, piece.rotationY, {1,1,1}, shadedTint);
+    }
 
     // Draw magnetic tips for rods
     if (defPtr->isMagnetic && defPtr->type == PieceType::MagnetixRod) {
-        Vector3 end1 = Vector3Add(piece.position, Vector3RotateByAxisAngle({-1,0,0}, {0,1,0}, rotY*DEG2RAD));
-        Vector3 end2 = Vector3Add(piece.position, Vector3RotateByAxisAngle({1,0,0}, {0,1,0}, rotY*DEG2RAD));
+        Vector3 end1 = Vector3Add(piece.position, Vector3RotateByAxisAngle({-1,0,0}, {0,1,0}, piece.rotationY*DEG2RAD));
+        Vector3 end2 = Vector3Add(piece.position, Vector3RotateByAxisAngle({1,0,0}, {0,1,0}, piece.rotationY*DEG2RAD));
         DrawSphere(end1, 0.11f, WHITE);
         DrawSphere(end2, 0.11f, WHITE);
         if (piece.snapHighlight) {

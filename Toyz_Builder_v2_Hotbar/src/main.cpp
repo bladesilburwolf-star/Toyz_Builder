@@ -6,9 +6,12 @@
 #include "inventory.h"
 #include "terrain.h"
 #include "player.h"
+#include "map.h"
 #include <vector>
 #include <limits>
 #include <cmath>
+#include <array>
+#include <string>
 
 static const float GRID_SIZE = 1.0f;
 static const float SNAP_RADIUS = 0.65f; // S mode - magnetic snap
@@ -64,11 +67,27 @@ struct GameSettings {
     float gamepadLookSensitivity = 140.0f; // deg/sec at full stick deflection
     bool invertY = false;
     float lookDeadzone = 0.18f;
+    bool thirdPerson = true; // Start in third-person mode
+    float thirdPersonDistance = 5.0f;
+    float thirdPersonHeight = 1.5f;
+    int resolutionIndex = 0; // 0 = 1280x800, 1 = 1280x720, 2 = 1920x1080, 3 = 1600x900
+    bool fullscreen = false;
+    int skyboxIndex = 0; // Current skybox selection
+    float brightness = 1.0f; // Light brightness
+    float ambient = 0.4f; // Ambient light level
+    bool fogEnabled = false; // Fog post-processing
+    float fogDensity = 0.01f; // Fog density
 };
 
 int main() {
     const int screenW = 1280, screenH = 800;
     InitWindow(screenW, screenH, "Toyz Builder Engine v5");
+    
+    // Apply initial resolution settings
+    if (settings.fullscreen) {
+        ToggleFullscreen();
+    }
+    
     SetTargetFPS(60);
     rlImGuiSetup(true);
 
@@ -79,10 +98,33 @@ int main() {
 
     std::vector<PieceDef> pieceDefs = LoadPieceDefs();
     ForestTerrain forest = GenerateForestTerrain(0xC0FFEEu);
+    
+    // Initialize map system and create default maps
+    MapSystem& mapSystem = GetMapSystem();
+    mapSystem.CreateDefaultMaps();
+    
+    // Load the current map's pieces
     std::vector<PlacedPiece> placedPieces;
-    {
+    Map* currentMap = mapSystem.GetCurrentMap();
+    if (currentMap) {
+        placedPieces = currentMap->pieces;
+        // Update skybox from map
+        for (int i = 0; i < (int)skyboxNames.size(); i++) {
+            if (skyboxNames[i] == currentMap->skybox) {
+                settings.skyboxIndex = i;
+                break;
+            }
+        }
+    } else {
+        // Fallback to default pieces
         PlacedPiece a; a.type = PieceType::StraightLog; a.position = {0,0.25f,0}; a.rotationY=0; placedPieces.push_back(a);
         PlacedPiece b; b.type = PieceType::MagnetixBall; b.position = {1.5f,0.25f,0}; b.color = PieceColor::White; placedPieces.push_back(b);
+    }
+    
+    // Load skybox texture
+    if (settings.skyboxIndex >= 0 && settings.skyboxIndex < (int)skyboxNames.size()) {
+        std::string skyboxPath = "assets/skyboxes/" + skyboxNames[settings.skyboxIndex] + ".jpg";
+        skyboxTexture = LoadTexture(skyboxPath.c_str());
     }
 
     Player player;
@@ -94,6 +136,23 @@ int main() {
 
     GameSettings settings;
     bool showOptions = false;
+    
+    // Resolution presets
+    std::array<std::pair<int, int>, 4> resolutions = {{
+        {1280, 800},
+        {1280, 720},
+        {1920, 1080},
+        {1600, 900}
+    }};
+    
+    // Skybox textures
+    std::vector<std::string> skyboxNames = {
+        "day1", "day2", "day3", "day4", "day5",
+        "night1", "night2", "night3", "night4",
+        "overcast1", "overcast2", "overcast3",
+        "stomry1"
+    };
+    Texture2D skyboxTexture = {0};
 
     PieceLength placingLength = PieceLength::MED;
     float placingRotation = 0, placingRotX = 0, placingRotZ = 0;
@@ -161,12 +220,26 @@ int main() {
         if (IsKeyPressed(KEY_T)) buildMode = BuildMode::ShrineRotate;
         if (IsKeyPressed(KEY_G)) showGizmo = !showGizmo;
         if (IsKeyPressed(KEY_H)) showHelpers = !showHelpers;
+        if (IsKeyPressed(KEY_C)) settings.thirdPerson = !settings.thirdPerson; // Toggle camera mode
+        
+        // Ensure cursor stays locked during gameplay (first-person only)
+        // In third-person mode, cursor is always visible for better control
+        if (!menuOpen) {
+            if (settings.thirdPerson) {
+                EnableCursor();
+            } else {
+                if (IsWindowFocused()) {
+                    DisableCursor();
+                }
+            }
+        }
 
         // --- Look (mouse + right stick), only while no menu owns the cursor ---
         if (!menuOpen) {
             Vector2 mouseDelta = GetMouseDelta();
+            // Fixed: X axis was correct, but Y axis was inverted. Now properly non-inverted by default.
             camYaw += mouseDelta.x * settings.mouseSensitivity;
-            camPitch += mouseDelta.y * settings.mouseSensitivity * (settings.invertY ? 1.0f : -1.0f);
+            camPitch += mouseDelta.y * settings.mouseSensitivity * (settings.invertY ? -1.0f : 1.0f);
 
             if (hasController) {
                 float rx = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
@@ -186,7 +259,7 @@ int main() {
             UpdatePlayer(player, forest, dt, hasController, 0, camYaw, true);
         }
 
-        // First-person camera follows the player's eye position and look direction.
+        // Camera setup - supports both first-person and third-person modes
         {
             float yawRad = camYaw * DEG2RAD;
             float pitchRad = camPitch * DEG2RAD;
@@ -195,8 +268,44 @@ int main() {
                 sinf(pitchRad),
                 cosf(pitchRad) * cosf(yawRad)
             };
-            camera.position = { player.position.x, player.position.y + player.eyeHeight, player.position.z };
-            camera.target = Vector3Add(camera.position, lookDir);
+            
+            if (settings.thirdPerson) {
+                // Third-person camera: positioned behind and above the player
+                Vector3 playerEye = { player.position.x, player.position.y + player.eyeHeight, player.position.z };
+                Vector3 offset = Vector3Scale(lookDir, -settings.thirdPersonDistance);
+                offset.y += settings.thirdPersonHeight;
+                camera.position = Vector3Add(playerEye, offset);
+                camera.target = Vector3Add(playerEye, Vector3Scale(lookDir, 1.0f));
+            } else {
+                // First-person camera follows the player's eye position
+                camera.position = { player.position.x, player.position.y + player.eyeHeight, player.position.z };
+                camera.target = Vector3Add(camera.position, lookDir);
+            }
+        }
+        
+        // Set up lighting based on settings
+        {
+            // Ambient light
+            float ambientLevel = settings.ambient * settings.brightness;
+            SetAmbientLight(Color{
+                (unsigned char)(40 * ambientLevel),
+                (unsigned char)(44 * ambientLevel),
+                (unsigned char)(52 * ambientLevel),
+                255
+            });
+            
+            // Directional light (sun)
+            Vector3 lightDir = Vector3Normalize({0.5f, -1.0f, 0.5f});
+            SetShadowsEnabled(true);
+            
+            // Fog post-processing
+            if (settings.fogEnabled) {
+                SetFogEnabled(true);
+                SetFogDensity(settings.fogDensity);
+                SetFogColor(Color{100, 120, 140, 255});
+            } else {
+                SetFogEnabled(false);
+            }
         }
 
         // --- Building: raycast from the screen-center crosshair (not the OS
@@ -217,22 +326,86 @@ int main() {
                 }
 
                 Vector3 snappedSpot;
+                bool stacked = false;
+                
                 if (buildMode == BuildMode::MagneticSnap && FindNearestSnap(hit, placedPieces, pieceDefs, snappedSpot)) {
                     ghostPos = snappedSpot;
+                    // For stacking: find the piece we're snapping to
+                    int hitIndex = -1;
+                    float bestSnapDist = SNAP_RADIUS;
+                    for (int i = 0; i < (int)placedPieces.size(); i++) {
+                        const PieceDef* defPtr = nullptr;
+                        for (auto& d : pieceDefs) if (d.type == placedPieces[i].type) {
+                            if (placedPieces[i].type == PieceType::MagnetixRod && d.defaultColor != placedPieces[i].color) continue;
+                            defPtr = &d; break;
+                        }
+                        if (!defPtr) continue;
+                        for (const auto& sp : defPtr->snapPoints) {
+                            Vector3 rotated = Vector3RotateByAxisAngle(sp.position, {0,1,0}, placedPieces[i].rotationY * DEG2RAD);
+                            rotated = Vector3RotateByAxisAngle(rotated, {1,0,0}, placedPieces[i].rotationX * DEG2RAD);
+                            Vector3 worldSnap = Vector3Add(placedPieces[i].position, rotated);
+                            float d = Vector3Distance(worldSnap, hit);
+                            if (d < bestSnapDist) {
+                                bestSnapDist = d;
+                                hitIndex = i;
+                            }
+                        }
+                    }
+                    if (hitIndex >= 0) {
+                        // Stack on top of the hit piece
+                        const PieceDef* defPtr = nullptr;
+                        for (auto& d : pieceDefs) if (d.type == placedPieces[hitIndex].type) {
+                            if (placedPieces[hitIndex].type == PieceType::MagnetixRod && d.defaultColor != placedPieces[hitIndex].color) continue;
+                            defPtr = &d; break;
+                        }
+                        if (defPtr) {
+                            ghostPos.y = placedPieces[hitIndex].position.y + defPtr->halfExtents.y * 2.0f;
+                            stacked = true;
+                        }
+                    }
                 } else {
                     ghostPos = SnapToGrid(hit);
+                    // Check for stacking on existing pieces at grid positions
+                    for (const auto& p : placedPieces) {
+                        Vector3 gridPos = SnapToGrid(p.position);
+                        if (Vector3Distance(gridPos, ghostPos) < 0.1f) {
+                            const PieceDef* defPtr = nullptr;
+                            for (auto& d : pieceDefs) if (d.type == p.type) {
+                                if (p.type == PieceType::MagnetixRod && d.defaultColor != p.color) continue;
+                                defPtr = &d; break;
+                            }
+                            if (defPtr) {
+                                ghostPos.y = p.position.y + defPtr->halfExtents.y * 2.0f;
+                                stacked = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!stacked && t > 0) {
+                        ghostPos.y = 0.25f; // resting on the ground plane
+                    }
                     for (auto& p : placedPieces) p.snapHighlight = false;
                 }
-                if (t > 0) ghostPos.y = 0.25f; // resting on the ground plane
+                
+                // Apply terrain height for ground placement
+                if (!stacked && t > 0) {
+                    ghostPos.y = GetTerrainHeight(forest, ghostPos.x, ghostPos.z) + 0.25f;
+                }
+                
                 haveGhostPos = true;
             }
 
             if (hasController) {
                 if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) { placingRotation -=90; if (placingRotation<0) placingRotation+=360; }
                 if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) { placingRotation +=90; if (placingRotation>=360) placingRotation-=360; }
+                // Gamepad triggers for height adjustment while placing
+                if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_TRIGGER_2)) { placingRotX += 15; if (placingRotX >= 360) placingRotX -= 360; }
+                if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_TRIGGER_2)) { placingRotX -= 15; if (placingRotX < 0) placingRotX += 360; }
             }
             if (IsKeyPressed(KEY_R)) { placingRotation += 90; if (placingRotation >= 360) placingRotation -= 360; }
             if (IsKeyPressed(KEY_F)) { placingRotation -= 90; if (placingRotation < 0) placingRotation += 360; }
+            if (IsKeyPressed(KEY_Q)) { placingRotX += 15; if (placingRotX >= 360) placingRotX -= 360; } // Tilt forward
+            if (IsKeyPressed(KEY_E)) { placingRotX -= 15; if (placingRotX < 0) placingRotX += 360; } // Tilt backward
 
             bool placePressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (hasController && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
             if (haveGhostPos && placePressed) {
@@ -258,9 +431,25 @@ int main() {
         if (!isPlacing && !menuOpen && selectedIndex>=0 && deletePressed) { placedPieces.erase(placedPieces.begin()+selectedIndex); selectedIndex=-1; }
 
         BeginDrawing();
-        ClearBackground(Color{40,44,52,255});
+        
+        // Draw skybox background
+        if (skyboxTexture.id != 0) {
+            DrawTexturePro(skyboxTexture,
+                         {0, 0, (float)skyboxTexture.width, (float)skyboxTexture.height},
+                         {0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()},
+                         {0, 0}, 0, WHITE);
+        } else {
+            ClearBackground(Color{40,44,52,255});
+        }
+        
         BeginMode3D(camera);
         DrawForestTerrain(forest);
+        
+        // Draw player in third-person mode
+        if (settings.thirdPerson) {
+            DrawPlayer(player);
+        }
+        
         for (const auto& p : placedPieces) DrawPlacedPiece(p, pieceDefs);
         if (isPlacing && haveGhostPos) {
             const PieceDef* defPtr = nullptr;
@@ -293,7 +482,7 @@ int main() {
         }
 
         if (showOptions) {
-            ImGui::SetNextWindowSize(ImVec2(380, 260), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(380, 420), ImGuiCond_FirstUseEver);
             ImGui::Begin("Options [V]", &showOptions);
             ImGui::Text("Controls");
             ImGui::BulletText("WASD / Left Stick: Move");
@@ -310,6 +499,101 @@ int main() {
             ImGui::SliderFloat("Gamepad Look Speed", &settings.gamepadLookSensitivity, 40.0f, 300.0f);
             ImGui::Checkbox("Invert Y Look", &settings.invertY);
             ImGui::Separator();
+            
+            // Camera mode toggle
+            if (ImGui::Checkbox("Third-Person Camera", &settings.thirdPerson)) {
+                // Camera mode changed, update cursor lock state
+                if (!menuOpen) DisableCursor();
+            }
+            if (settings.thirdPerson) {
+                ImGui::SliderFloat("Camera Distance", &settings.thirdPersonDistance, 2.0f, 10.0f);
+                ImGui::SliderFloat("Camera Height", &settings.thirdPersonHeight, 0.5f, 3.0f);
+            }
+            
+            ImGui::Separator();
+            ImGui::Text("Display Settings");
+            
+            // Resolution selection
+            const char* resolutionNames[] = { "1280x800", "1280x720", "1920x1080", "1600x900" };
+            if (ImGui::BeginCombo("Resolution", resolutionNames[settings.resolutionIndex])) {
+                for (int i = 0; i < 4; i++) {
+                    bool isSelected = (settings.resolutionIndex == i);
+                    if (ImGui::Selectable(resolutionNames[i], isSelected)) {
+                        settings.resolutionIndex = i;
+                    }
+                    if (isSelected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            
+            if (ImGui::Button("Apply Resolution")) {
+                SetWindowSize(resolutions[settings.resolutionIndex].first, resolutions[settings.resolutionIndex].second);
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Fullscreen", &settings.fullscreen)) {
+                ToggleFullscreen();
+            }
+            
+            ImGui::Separator();
+            ImGui::Text("Skybox Settings");
+            
+            // Skybox selection
+            if (ImGui::BeginCombo("Skybox", skyboxNames[settings.skyboxIndex].c_str())) {
+                for (int i = 0; i < (int)skyboxNames.size(); i++) {
+                    bool isSelected = (settings.skyboxIndex == i);
+                    if (ImGui::Selectable(skyboxNames[i].c_str(), isSelected)) {
+                        settings.skyboxIndex = i;
+                        // Reload skybox texture
+                        if (skyboxTexture.id != 0) UnloadTexture(skyboxTexture);
+                        std::string skyboxPath = "assets/skyboxes/" + skyboxNames[i] + ".jpg";
+                        skyboxTexture = LoadTexture(skyboxPath.c_str());
+                    }
+                    if (isSelected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            
+            ImGui::Separator();
+            ImGui::Text("Lighting Settings");
+            ImGui::SliderFloat("Brightness", &settings.brightness, 0.1f, 2.0f);
+            ImGui::SliderFloat("Ambient Light", &settings.ambient, 0.0f, 1.0f);
+            ImGui::Checkbox("Enable Fog", &settings.fogEnabled);
+            if (settings.fogEnabled) {
+                ImGui::SliderFloat("Fog Density", &settings.fogDensity, 0.001f, 0.1f);
+            }
+            
+            ImGui::Separator();
+            
+            // Map system controls
+            ImGui::Text("Map System");
+            Map* currentMap = mapSystem.GetCurrentMap();
+            if (ImGui::Button("Save Current Map")) {
+                if (currentMap) {
+                    mapSystem.SaveMap("maps/" + currentMap->name + ".map");
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Create New Map")) {
+                mapSystem.CreateNewMap("New Map " + std::to_string(mapSystem.GetMapCount() + 1), MapType::OUTDOOR);
+            }
+            
+            // Map selection
+            std::vector<std::string> mapNames = mapSystem.GetMapList();
+            if (ImGui::BeginCombo("Select Map", currentMap ? currentMap->name.c_str() : "None")) {
+                for (int i = 0; i < (int)mapNames.size(); i++) {
+                    bool isSelected = (mapSystem.currentMapIndex == i);
+                    if (ImGui::Selectable(mapNames[i].c_str(), isSelected)) {
+                        mapSystem.SwitchToMap(i);
+                        // Reload pieces from the selected map
+                        placedPieces = mapSystem.GetCurrentMap()->pieces;
+                    }
+                    if (isSelected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            
+            ImGui::Separator();
             ImGui::Text("Gamepad: %s", hasController ? "Connected" : "Not connected");
             if (!showOptions) DisableCursor(); // closed via the window's own X button
             ImGui::End();
@@ -324,14 +608,30 @@ int main() {
         ImGui::Text("Pieces: %d | Selected: %d", (int)placedPieces.size(), selectedIndex);
         ImGui::Text("Controller: %s", hasController?"Xbox Connected":"None - Keyboard/Mouse");
         if (isPlacing) ImGui::TextColored(ImVec4(0.3f,0.7f,1,1),"PLACING - Click/RT to place, Esc/B to cancel");
+        
+        // Map info
+        Map* currentMap = mapSystem.GetCurrentMap();
+        if (currentMap) {
+            ImGui::Text("Map: %s (%s)", currentMap->name.c_str(), 
+                       currentMap->type == MapType::OUTDOOR ? "Outdoor" : 
+                       currentMap->type == MapType::INDOOR ? "Indoor" : "Cave");
+        }
         ImGui::End();
 
         rlImGuiEnd();
         EndDrawing();
     }
 
+    // Save current map before exiting
+    Map* currentMap = mapSystem.GetCurrentMap();
+    if (currentMap) {
+        currentMap->pieces = placedPieces;
+        mapSystem.SaveMap("maps/" + currentMap->name + ".map");
+    }
+    
     UnloadForestTerrain(forest);
     UnloadPieceDefs(pieceDefs);
+    if (skyboxTexture.id != 0) UnloadTexture(skyboxTexture);
     rlImGuiShutdown();
     CloseWindow();
     return 0;

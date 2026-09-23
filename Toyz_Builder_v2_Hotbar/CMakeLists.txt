@@ -53,6 +53,7 @@ set(TOYZ_SOURCES
     src/inventory.cpp
     src/terrain.cpp
     src/player.cpp
+    src/map.cpp
 )
 
 # Main executable (was LincolnLogs3D, now ToyzBuilder)
