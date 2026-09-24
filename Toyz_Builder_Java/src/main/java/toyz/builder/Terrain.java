@@ -169,9 +169,9 @@ public final class Terrain {
     public static ForestTerrain generateForestTerrain(int seed) {
         ForestTerrain forest = new ForestTerrain();
         forest.seed = seed;
-        forest.size = 320f;
-        forest.cellSize = 2.5f;
-        forest.heightScale = 14f;
+        forest.size = 180f;
+        forest.cellSize = 3.0f;
+        forest.heightScale = 9f;
         forest.waterLevel = forest.heightScale * WATER_LEVEL_FRAC;
 
         float h = forest.size * 0.5f;
@@ -185,6 +185,9 @@ public final class Terrain {
                                     Helpers.newColor(100, 80, 60, 255), 1.5f, 50));   // NE hills
 
         int cells = (int) (forest.size / forest.cellSize);
+        // Limit maximum cells to prevent excessive memory usage and improve performance
+        cells = Math.min(cells, 48);
+        forest.cellSize = forest.size / cells;
         int vertsPerSide = cells + 1;
         int vertexCount = vertsPerSide * vertsPerSide;
         int triangleCount = cells * cells * 2;
@@ -298,9 +301,11 @@ public final class Terrain {
             .color(Helpers.newColor(70, 130, 55, 255));
 
         // Trees
-        final float spacing = 7.0f;
-        for (float zPos = -forest.size * 0.46f; zPos <= forest.size * 0.46f; zPos += spacing) {
-            for (float xPos = -forest.size * 0.46f; xPos <= forest.size * 0.46f; xPos += spacing) {
+        final float spacing = 12.0f;
+        // Reduce tree generation area for better performance
+        float treeArea = forest.size * 0.35f;
+        for (float zPos = -treeArea; zPos <= treeArea; zPos += spacing) {
+            for (float xPos = -treeArea; xPos <= treeArea; xPos += spacing) {
                 float jitterX = (hash2D((int) (xPos * 10), (int) (zPos * 10), seed) - 0.5f) * 3f;
                 float jitterZ = (hash2D((int) (zPos * 10), (int) (xPos * 10), seed + 77) - 0.5f) * 3f;
                 float px = xPos + jitterX;
@@ -338,7 +343,7 @@ public final class Terrain {
         }
 
         // Landmark pines on the ridges
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 3; i++) {
             float angle = hash2D(i, 0, seed + 456) * 360f;
             float distance = 35f + hash2D(i, 1, seed + 789) * 50f;
             float px = (float) (Math.cos(Math.toRadians(angle)) * distance);

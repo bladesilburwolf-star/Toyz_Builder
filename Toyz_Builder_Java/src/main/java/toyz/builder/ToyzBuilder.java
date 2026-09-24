@@ -66,6 +66,8 @@ public final class ToyzBuilder {
                                             Helpers.newVector3(0, 1, 0), 70f, CAMERA_PERSPECTIVE);
 
         List<Piece.PieceDef> pieceDefs = Piece.loadPieceDefs();
+        
+        // Create a simple initial forest - will be replaced if NewWorld is clicked
         Terrain.ForestTerrain forest = Terrain.generateForestTerrain(0xC0FFEE);
 
         MapSystem mapSystem = MapSystem.get();
@@ -147,15 +149,23 @@ public final class ToyzBuilder {
                         titleMenu.showSettings = false;
                 } else {
                     if (tact == UI.TitleAction.NewWorld) {
-                        Terrain.unloadForestTerrain(forest);
-                        int seed = (int) (System.currentTimeMillis() & 0xFFFFFFFFL);
-                        forest = Terrain.generateForestTerrain(seed);
+                        // Clear existing pieces
                         placedPieces.clear();
                         selectedIndex = -1;
-                        player = Player.init(forest);
+                        
+                        // Create new map with fresh seed
+                        int seed = (int) (System.currentTimeMillis() & 0xFFFFFFFFL);
                         mapSystem.createNewMap(String.format("World %d", seed & 0xFFFF), MapSystem.MapType.OUTDOOR);
                         MapSystem.Map m = mapSystem.getCurrentMap();
                         if (m != null) m.pieces.clear();
+                        
+                        // Reinitialize player position
+                        player.position = Helpers.newVector3(0, 
+                            Terrain.getTerrainHeight(forest, 0, 0) + player.radius, 0);
+                        player.velocity = Helpers.newVector3(0, 0, 0);
+                        player.yaw = 0;
+                        player.grounded = true;
+                        
                         appState = AppState.Playing;
                         pauseMenu.open = false;
                         DisableCursor();
@@ -509,15 +519,17 @@ public final class ToyzBuilder {
                         mapSystem.saveMap("maps/" + m.name + ".map");
                     }
                 } else if (act == UI.PauseAction.NewMap) {
-                    Terrain.unloadForestTerrain(forest);
-                    int seed = (int) (System.currentTimeMillis() & 0xFFFFFFFFL);
-                    forest = Terrain.generateForestTerrain(seed);
                     placedPieces.clear();
                     selectedIndex = -1;
-                    player = Player.init(forest);
+                    int seed = (int) (System.currentTimeMillis() & 0xFFFFFFFFL);
                     mapSystem.createNewMap(String.format("World %d", seed & 0xFFFF), MapSystem.MapType.OUTDOOR);
                     MapSystem.Map m = mapSystem.getCurrentMap();
                     if (m != null) m.pieces.clear();
+                    player.position = Helpers.newVector3(0, 
+                        Terrain.getTerrainHeight(forest, 0, 0) + player.radius, 0);
+                    player.velocity = Helpers.newVector3(0, 0, 0);
+                    player.yaw = 0;
+                    player.grounded = true;
                     pauseMenu.open = false;
                     pauseMenu.showOptionsPanel = false;
                     DisableCursor();

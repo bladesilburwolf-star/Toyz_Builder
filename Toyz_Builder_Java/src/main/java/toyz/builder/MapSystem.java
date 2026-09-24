@@ -124,17 +124,7 @@ public final class MapSystem {
         map.name = name;
         map.type = type;
         map.spawnPoint = Helpers.newVector3(0, 1, 0);
-        
-        // Fallback check for skybox file existence
-        String targetSkybox = "day1";
-        File skyboxFile = new File("assets/skyboxes/" + targetSkybox + ".jpg");
-        if (!skyboxFile.exists()) {
-            System.err.println("Warning: Target skybox '" + targetSkybox + ".jpg' not found. Falling back to day1.");
-            map.skybox = "day1";
-        } else {
-            map.skybox = targetSkybox;
-        }
-
+        map.skybox = "day1";
         map.ambientColor = Helpers.newColor(40, 44, 52, 255);
         map.ambientIntensity = 0.4f;
         map.hasCeiling = (type == MapType.INDOOR);
