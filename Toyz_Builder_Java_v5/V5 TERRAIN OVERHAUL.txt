@@ -1,0 +1,18 @@
+Toyz Builder Java v5 — Terrain Overhaul
+=======================================
+
+Scope:
+- Final open-world land pass before the Lincoln Log piece expansion.
+- 20-biome foundation.
+- Larger 640m x 640m terrain field.
+- Stronger mountain/highland/mesa/badland shaping.
+- Natural landform decorations.
+- Local lake and river water surfaces.
+- Frozen-water state for cold regions.
+- Existing tree/view-distance clipping retained.
+- Existing caves, magma, rocks, vegetation and tree systems retained.
+- No indoor maps or architecture in this pass.
+
+Handoff:
+ChatGPT — landscape/land features/liquid systems.
+Next phase: Grok — Lincoln Log pieces and related construction pieces.
