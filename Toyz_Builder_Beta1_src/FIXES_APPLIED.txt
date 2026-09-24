@@ -1,0 +1,31 @@
+Toyz Builder Engine — BETA 1
+
+From Alpha 4 baseline + MenuOverhaul.
+
+TITLE SCREEN
+- Official title: TOYZ BUILDER ENGINE / BETA 1 / SERIF SYSTEM WORKS
+- NEW WORLD | CONTINUE | SETTINGS | EXIT
+- Steel + phosphor UI (no gray ImGui chrome)
+
+MAP GENERATION
+- NEW WORLD: new seed, regenerates terrain, clears pieces, spawns player
+- Available from title and pause menu
+- EXIT TO TITLE saves current map then returns
+
+SETTINGS MENU
+- From title or pause → SETTINGS
+- Mouse / gamepad / arrow look, invert, 3rd person
+- Tree Draw Distance (performance)
+- Sky preset, resolution, fullscreen
+- F11 / Alt+Enter always available
+
+PERFORMANCE
+- Tree spacing 7.0 (fewer trees)
+- Distance cull: trees beyond Tree Draw Dist skipped
+- LOD: far trees = trunk + 1 canopy blob (not multi-layer)
+- Pine near: 3 layers (was 4)
+- FPS shown on HUD
+
+WINDOW
+- Title bar: "Toyz Builder Engine  —  Beta 1"
+- ESC still never quits; Exit to Desktop / Alt+F4 only
