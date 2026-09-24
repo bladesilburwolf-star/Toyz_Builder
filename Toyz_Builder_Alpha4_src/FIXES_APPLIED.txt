@@ -1,0 +1,31 @@
+Toyz Builder v3 — Menu overhaul (Minetest / Classic Cube style)
+
+Removed ImGui Options + gray debug window for game systems.
+
+PAUSE MENU (ESC)
+- ESC never quits the game (SetExitKey disabled)
+- ESC opens steel + phosphor-green pause panel
+- Resume / Options / Save Map / New Map / Exit to Desktop
+- Arrow keys + Enter or mouse click
+- Options panel: sens, invert, 3rd person, sky preset, resolution, fullscreen
+
+CONTROLS
+- F11 or Alt+Enter = fullscreen
+- Alt+F4 / Exit to Desktop = leave game
+- E = inventory (still uses grid UI)
+- Mouse look: higher default sens (0.35), no longer blocked by ImGui capture
+
+SKY
+- Working presets: day / dusk / night / overcast / storm (solid colors)
+- Change in Options > Sky  < / >
+
+NEW MAP
+- Regenerates terrain with a new seed (Classic Cube style)
+- Clears placed pieces and respawns player
+
+SAVE MAP
+- Writes maps/<name>.map from pause menu
+- Also auto-saves on Exit
+
+Visual style: black steel gradient panels, phosphor green / white text
+(Serif System Works signature look — not gray ImGui buttons)
