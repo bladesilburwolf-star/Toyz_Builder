@@ -84,17 +84,17 @@ public final class MapSystem {
         int halfD = Math.max(3, Math.round(3 * scale));
         int levels = Math.max(2, Math.round(3 * scale));
         float y0 = ground + 0.5f;
-        // Plank walls: perimeter is built from the new door-thickness plank pieces.
+        // Block walls (oakblock.glb) — GLB regular blocks, not OBJ
         for (int level = 0; level < levels; level++) {
             float y = y0 + level * 1.0f;
             for (int x = -halfW; x <= halfW; x++) {
                 if (details && level == 0 && Math.abs(x) <= 1) continue;
-                out.add(structurePiece(Piece.PieceType.Plank, cx + x * 0.7f, y, cz - halfD * 0.7f, 0, Piece.PieceColor.Walnut));
-                out.add(structurePiece(Piece.PieceType.Plank, cx + x * 0.7f, y, cz + halfD * 0.7f, 0, Piece.PieceColor.Walnut));
+                out.add(structurePiece(Piece.PieceType.BlockWood, cx + x * 1.0f, y, cz - halfD * 1.0f, 0, Piece.PieceColor.Oak));
+                out.add(structurePiece(Piece.PieceType.BlockWood, cx + x * 1.0f, y, cz + halfD * 1.0f, 0, Piece.PieceColor.Oak));
             }
             for (int z = -halfD + 1; z < halfD; z++) {
-                out.add(structurePiece(Piece.PieceType.Plank, cx - halfW * 0.7f, y, cz + z * 0.7f, 90, Piece.PieceColor.Pine));
-                out.add(structurePiece(Piece.PieceType.Plank, cx + halfW * 0.7f, y, cz + z * 0.7f, 90, Piece.PieceColor.Pine));
+                out.add(structurePiece(Piece.PieceType.BlockWood, cx - halfW * 1.0f, y, cz + z * 1.0f, 0, Piece.PieceColor.Pine));
+                out.add(structurePiece(Piece.PieceType.BlockWood, cx + halfW * 1.0f, y, cz + z * 1.0f, 0, Piece.PieceColor.Pine));
             }
         }
         // Corner posts and top beam language makes the generated building read as a log/plank structure.
@@ -133,10 +133,20 @@ public final class MapSystem {
     public static List<Piece.PlacedPiece> generateStructures(Terrain.ForestTerrain terrain, StructureSettings cfg) {
         List<Piece.PlacedPiece> out = new ArrayList<>();
         if (terrain == null || cfg == null || !cfg.enabled || !terrain.structuresEnabled) return out;
+        // Prefer V3 site-based forts/temples built from block GLBs
+        try {
+            StructureGenerator.Result sr = StructureGenerator.generateFromSites(terrain, cfg);
+            if (sr != null && !sr.pieces.isEmpty()) {
+                out.addAll(sr.pieces);
+                return out;
+            }
+        } catch (Throwable t) {
+            System.err.println("[MapSystem] site structures failed: " + t.getMessage());
+        }
         int seed = terrain.seed;
         float scale = Math.max(0.65f, Math.min(2.0f, cfg.globalScale));
         int made = 0;
-        // A deterministic settlement ring keeps the spawn area readable while making each seed distinct.
+        // Legacy settlement ring (houses use Plank/Block pieces)
         for (int i = 0; i < cfg.maxStructures && made < cfg.maxStructures; i++) {
             float angle = structureHash(i, 17, seed) * 6.2831853f;
             float dist = cfg.minSpacing + structureHash(i, 29, seed) * 115f;

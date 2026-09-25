@@ -38,25 +38,40 @@ public final class StructureGenerator {
         return p;
     }
 
-    private static void addLogWall(List<Piece.PlacedPiece> out, float cx, float cz, float ground,
-                                   int half, int height, Piece.PieceColor wood) {
+    /** Wall from regular blocks (GLB-backed oakblock/rockblock/sandblock) — not OBJ primitives. */
+    private static void addBlockWall(List<Piece.PlacedPiece> out, float cx, float cz, float ground,
+                                     int half, int height, Piece.PieceType block, Piece.PieceColor color) {
+        float step = 1.0f;
         for (int y = 0; y < height; y++) {
-            float yy = ground + 0.5f + y;
+            float yy = ground + 0.5f + y * step;
             for (int x = -half; x <= half; x++) {
-                out.add(piece(Piece.PieceType.StraightLog, cx + x, yy, cz - half, 0, wood));
-                out.add(piece(Piece.PieceType.StraightLog, cx + x, yy, cz + half, 0, wood));
+                out.add(piece(block, cx + x * step, yy, cz - half * step, 0, color));
+                out.add(piece(block, cx + x * step, yy, cz + half * step, 0, color));
             }
             for (int z = -half + 1; z < half; z++) {
-                out.add(piece(Piece.PieceType.StraightLog, cx - half, yy, cz + z, 90, wood));
-                out.add(piece(Piece.PieceType.StraightLog, cx + half, yy, cz + z, 90, wood));
+                out.add(piece(block, cx - half * step, yy, cz + z * step, 0, color));
+                out.add(piece(block, cx + half * step, yy, cz + z * step, 0, color));
             }
         }
+    }
+
+    private static void addLogWall(List<Piece.PlacedPiece> out, float cx, float cz, float ground,
+                                   int half, int height, Piece.PieceColor wood) {
+        // Prefer vertical log GLBs for corner posts; walls use wood blocks
+        addBlockWall(out, cx, cz, ground, half, height, Piece.PieceType.BlockWood, wood);
+    }
+
+    private static Piece.PieceType wallBlockForKind(String kind) {
+        if ("temple".equals(kind)) return Piece.PieceType.BlockStone;
+        if ("desert".equals(kind) || "sand".equals(kind)) return Piece.PieceType.BlockSand;
+        return Piece.PieceType.BlockWood;
     }
 
     private static void addFort(Result r, float cx, float cz, float ground, float scale, int seed) {
         int half = Math.max(4, Math.round(5 * scale));
         int height = Math.max(3, Math.round(3 * scale));
-        addLogWall(r.pieces, cx, cz, ground, half, height, Piece.PieceColor.Oak);
+        // Regular wood blocks (oakblock.glb) for walls
+        addBlockWall(r.pieces, cx, cz, ground, half, height, Piece.PieceType.BlockWood, Piece.PieceColor.Oak);
 
         for (int sx : new int[]{-1, 1}) {
             for (int sz : new int[]{-1, 1}) {
@@ -66,8 +81,8 @@ public final class StructureGenerator {
                     r.pieces.add(piece(Piece.PieceType.LogVert, tx,
                             ground + 0.5f + y, tz, 0, Piece.PieceColor.Pine));
                 }
-                r.pieces.add(piece(Piece.PieceType.RoofPeak, tx,
-                        ground + height + 2.0f, tz, 0, Piece.PieceColor.Natural));
+                r.pieces.add(piece(Piece.PieceType.BlockWood, tx,
+                        ground + height + 2.0f, tz, 0, Piece.PieceColor.Oak));
             }
         }
 
@@ -85,25 +100,27 @@ public final class StructureGenerator {
     }
 
     private static void addTemple(Result r, float cx, float cz, float ground, float scale, int seed) {
+        // Stone-block shell (rockblock/concrete GLB) — desert temples use sand blocks via addDesertTemple
         int radius = Math.max(3, Math.round(3 * scale));
         int height = Math.max(3, Math.round(4 * scale));
         Piece.PieceColor[] woods = {
             Piece.PieceColor.Cedar, Piece.PieceColor.Oak, Piece.PieceColor.Mahogany
         };
 
+        // Stone block pillars + floor (rockblock.glb)
         for (int x : new int[]{-radius, radius}) {
             for (int z : new int[]{-radius, radius}) {
                 for (int y = 0; y < height; y++) {
-                    r.pieces.add(piece(Piece.PieceType.LogVert, cx + x,
-                            ground + 0.5f + y, cz + z, 0,
-                            woods[Math.floorMod(seed + x + z, woods.length)]));
+                    r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x,
+                            ground + 0.5f + y, cz + z, 0, Piece.PieceColor.Natural));
                 }
             }
         }
+        addBlockWall(r.pieces, cx, cz, ground, radius, height - 1, Piece.PieceType.BlockStone, Piece.PieceColor.Natural);
 
         for (int x = -radius; x <= radius; x++) {
-            r.pieces.add(piece(Piece.PieceType.PlankWide, cx + x,
-                    ground + height + 0.1f, cz, 0, Piece.PieceColor.Cedar));
+            r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x,
+                    ground + height + 0.1f, cz, 0, Piece.PieceColor.Natural));
             r.pieces.add(piece(Piece.PieceType.Roof, cx + x,
                     ground + height + 0.65f, cz - 0.7f, 0, Piece.PieceColor.Natural));
             r.pieces.add(piece(Piece.PieceType.Roof, cx + x,
@@ -237,6 +254,68 @@ public final class StructureGenerator {
         s.maxAlive = maxAlive;
         s.spawnRadius = 5f;
         r.spawners.add(s);
+    }
+
+    private static void addDesertTemple(Result r, float cx, float cz, float ground, float scale, int seed) {
+        int half = Math.max(3, Math.round(4 * scale));
+        int height = Math.max(3, Math.round(4 * scale));
+        addBlockWall(r.pieces, cx, cz, ground, half, height, Piece.PieceType.BlockSand, Piece.PieceColor.Yellow);
+        for (int sx : new int[]{-1, 1}) {
+            for (int sz : new int[]{-1, 1}) {
+                float tx = cx + sx * (half - 1);
+                float tz = cz + sz * (half - 1);
+                for (int y = 0; y < height; y++) {
+                    r.pieces.add(piece(Piece.PieceType.BlockStone, tx, ground + 0.5f + y, tz, 0, Piece.PieceColor.Natural));
+                }
+            }
+        }
+        for (int x = -half + 1; x < half; x++) {
+            for (int z = -half + 1; z < half; z++) {
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x, ground + height + 0.5f, cz + z, 0, Piece.PieceColor.Natural));
+            }
+        }
+        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Walnut));
+        r.pieces.add(piece(Piece.PieceType.Sign, cx, ground + 1.7f, cz - half - 0.1f, 0, Piece.PieceColor.Pine));
+        addSpawner(r, cx, cz, ground, Mob.Kind.NEEDLEKIN, 0, 0, 8f, 2);
+        addSpawner(r, cx, cz, ground, Mob.Kind.AHRIMAN, half + 2f, 0, 11f, 1);
+    }
+
+    public static Result generateFromSites(Terrain.ForestTerrain terrain,
+                                           MapSystem.StructureSettings cfg) {
+        Result r = new Result();
+        if (terrain == null || cfg == null || !cfg.enabled) return r;
+        if (terrain.v2 != null && terrain.v2.structureSites != null
+                && !terrain.v2.structureSites.isEmpty()) {
+            int n = 0;
+            for (toyz.builder.terrain.StructureSite site : terrain.v2.structureSites) {
+                if (n >= cfg.maxStructures) break;
+                if (site.reserved) continue;
+                float ground = site.y > 0.1f ? site.y : Terrain.getTerrainHeight(terrain, site.x, site.z);
+                if (ground < terrain.waterLevel + 0.8f) continue;
+                float sc = Math.max(0.7f, Math.min(1.6f, cfg.globalScale * (0.9f + site.terrainScore * 0.3f)));
+                String kind = site.kind != null ? site.kind : "fort";
+                toyz.builder.terrain.BiomeId b = site.biome;
+                boolean desert = b == toyz.builder.terrain.BiomeId.DESERT
+                        || b == toyz.builder.terrain.BiomeId.BADLANDS
+                        || b == toyz.builder.terrain.BiomeId.MESA
+                        || b == toyz.builder.terrain.BiomeId.SAVANNA;
+                if ("temple".equals(kind) || desert) {
+                    if (desert) addDesertTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
+                    else addTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if ("bridge".equals(kind)) {
+                    addBridge(r, site.x, site.z, ground, sc, false, terrain.seed + n);
+                } else {
+                    addFort(r, site.x, site.z, ground, sc, terrain.seed + n);
+                }
+                site.reserved = true;
+                n++;
+            }
+            if (n > 0) {
+                System.out.println("[Structures] placed " + n + " from V3 sites (block/GLB)");
+                return r;
+            }
+        }
+        return generate(terrain, cfg);
     }
 
     public static Result generate(Terrain.ForestTerrain terrain,

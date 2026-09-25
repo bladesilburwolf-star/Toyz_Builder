@@ -41,13 +41,13 @@ public final class BiomeGenerator {
         }
         if (e > 10f && t < 0.4f) return BiomeId.TAIGA;
 
-        // Hot dry
-        if (t > 0.72f && m < 0.28f) {
-            if (e > 6f && s.erosion > 0.55f) return BiomeId.MESA;
-            if (s.erosion > 0.6f) return BiomeId.BADLANDS;
+        // Hot dry — larger desert bands (visible map segments)
+        if (t > 0.62f && m < 0.35f) {
+            if (e > 7f && s.erosion > 0.5f) return BiomeId.MESA;
+            if (s.erosion > 0.55f) return BiomeId.BADLANDS;
             return BiomeId.DESERT;
         }
-        if (t > 0.68f && m < 0.45f) return BiomeId.SAVANNA;
+        if (t > 0.58f && m < 0.42f) return BiomeId.SAVANNA;
 
         // Volcanic pockets
         if (t > 0.6f && m < 0.4f && volc > 0.78f && e > 5f) return BiomeId.VOLCANIC;

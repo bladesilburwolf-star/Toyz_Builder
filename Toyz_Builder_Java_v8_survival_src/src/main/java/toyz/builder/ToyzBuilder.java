@@ -799,8 +799,14 @@ public final class ToyzBuilder {
             }
 			
 			DrawText("WEATHER: " + Weather.name(), 12, 106, 14, UI.white());
-			DrawText("BIOME: " + Terrain.biomeNameAt(forest, player.position.x(), player.position.z()),
-			         12, 124, 14, UI.white());
+            // Biome name — top center (Minetest-style location label)
+            {
+                String bname = Terrain.biomeNameAt(forest, player.position.x(), player.position.z());
+                int bw = MeasureText(bname, 22);
+                int bx = GetScreenWidth() / 2 - bw / 2;
+                DrawRectangle(bx - 12, 8, bw + 24, 28, Helpers.newColor(10, 12, 16, 180));
+                DrawText(bname, bx, 12, 22, UI.phosphor());
+            }
 			
             // Hotbar + inventory (custom raylib UI replacing rlImGui)
             if (gameMode.isSurvival() && Survival.enabled) {

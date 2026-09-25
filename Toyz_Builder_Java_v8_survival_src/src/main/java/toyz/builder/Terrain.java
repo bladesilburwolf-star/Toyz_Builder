@@ -37,10 +37,13 @@ public final class Terrain {
     };
 
     private static final int[][] BIOME_GRASS = {
-        {240,245,250},{62,95,72},{55,120,50},{120,165,80},{170,120,50},
-        {35,140,60},{175,160,80},{220,195,135},{70,95,55},{60,50,48},
-        {105,150,75},{125,165,105},{175,105,58},{205,125,62},{55,115,75},
-        {220,205,155},{105,105,100},{135,185,105},{150,145,72},{190,215,225}
+        /*Snow*/{235,240,248}, /*Taiga*/{55,90,65}, /*Forest*/{48,115,45}, /*Meadow*/{95,155,70},
+        /*Autumn*/{165,110,45}, /*Jungle*/{28,125,52}, /*Savanna*/{195,175,85},
+        /*Desert*/{228,200,130}, /*Swamp*/{55,80,48}, /*Volcano*/{70,55,50},
+        /*Birch*/{95,145,70}, /*Alpine*/{120,155,100}, /*Badlands*/{180,95,50},
+        /*Mesa*/{210,120,55}, /*Mangrove*/{48,105,68}, /*Beach*/{235,215,160},
+        /*Highlands*/{95,100,95}, /*Flower*/{110,175,90}, /*DryForest*/{145,135,65},
+        /*Frozen*/{185,210,220}
     };
 
     private static final float[] BIOME_HEIGHT_MOD = {
@@ -150,6 +153,8 @@ public final class Terrain {
 
     public static class ForestTerrain {
         public Model terrainModel;
+        /** Real texture layers by biome (sand/rock/dirt/snow/grass). */
+        public Model terrainGrass, terrainSand, terrainRock, terrainDirt, terrainSnow;
         // tree part models (trunk = semi-rounded cylinder; leaves = leaf blocks)
         public Model trunkModel, trunkFatModel;
         public Model leafBlockModel, leafBlockSmallModel;
@@ -218,6 +223,78 @@ public final class Terrain {
         if (biomeType == 4 && f.logVertBirch != null) return f.logVertBirch;
         if (f.logVertOak != null) return f.logVertOak;
         return (biomeType == 6 && f.trunkFatModel != null) ? f.trunkFatModel : f.trunkModel;
+    }
+
+    private static int terrainMaterialForBiomes(int ba, int bb, int bc, int bd) {
+        int[] votes = new int[5];
+        votes[biomeToMat(ba)]++;
+        votes[biomeToMat(bb)]++;
+        votes[biomeToMat(bc)]++;
+        votes[biomeToMat(bd)]++;
+        int best = 0, bestV = votes[0];
+        for (int i = 1; i < 5; i++) if (votes[i] > bestV) { bestV = votes[i]; best = i; }
+        return best;
+    }
+
+    private static int biomeToMat(int biome) {
+        if (biome == BIOME_DESERT || biome == BIOME_BEACH || biome == BIOME_SAVANNA) return 1;
+        if (biome == BIOME_HIGHLANDS || biome == BIOME_ALPINE || biome == BIOME_BADLANDS
+                || biome == BIOME_MESA || biome == BIOME_VOLCANO) return 2;
+        if (biome == BIOME_SWAMP || biome == BIOME_MANGROVE || biome == BIOME_DRY_FOREST) return 3;
+        if (biome == BIOME_SNOW || biome == BIOME_FROZEN_LAKE) return 4;
+        return 0;
+    }
+
+    private static Texture loadTerrainTex(String primary, String fallback) {
+        Texture t = LoadTexture(primary);
+        if (t == null || t.id() == 0) t = LoadTexture(fallback);
+        if (t != null && t.id() != 0) {
+            SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+            SetTextureWrap(t, TEXTURE_WRAP_REPEAT);
+            System.out.println("[Terrain] texture: " + primary);
+            return t;
+        }
+        return null;
+    }
+
+    private static void assignTerrainTexture(Model model, Texture tex) {
+        if (model == null || model.meshCount() < 1) return;
+        if (tex != null && tex.id() != 0) {
+            SetMaterialTexture(model.materials().position(0), MATERIAL_MAP_DIFFUSE, tex);
+        }
+        model.materials().position(0).maps().position(MATERIAL_MAP_DIFFUSE).color(WHITE);
+    }
+
+    private static Model buildTerrainLayer(FloatPointer vertices, FloatPointer normals,
+            FloatPointer texcoords, BytePointer colors, int vertexCount,
+            java.util.List<short[]> tris) {
+        if (tris == null || tris.isEmpty()) return null;
+        int triCount = tris.size();
+        Mesh mesh = new Mesh().vertexCount(vertexCount).triangleCount(triCount);
+        FloatPointer v = new FloatPointer(vertexCount * 3L);
+        FloatPointer n = new FloatPointer(vertexCount * 3L);
+        FloatPointer uv = new FloatPointer(vertexCount * 2L);
+        BytePointer col = new BytePointer(vertexCount * 4L);
+        for (long i = 0; i < vertexCount * 3L; i++) {
+            v.put(i, vertices.get(i));
+            n.put(i, normals.get(i));
+        }
+        for (long i = 0; i < vertexCount * 2L; i++) uv.put(i, texcoords.get(i));
+        for (long i = 0; i < vertexCount * 4L; i++) col.put(i, colors.get(i));
+        ShortPointer idx = new ShortPointer(triCount * 3L);
+        long t = 0;
+        for (short[] tri : tris) {
+            idx.put(t++, tri[0]);
+            idx.put(t++, tri[1]);
+            idx.put(t++, tri[2]);
+        }
+        mesh.vertices(v);
+        mesh.normals(n);
+        mesh.texcoords(uv);
+        mesh.colors(col);
+        mesh.indices(idx);
+        UploadMesh(mesh, false);
+        return LoadModelFromMesh(mesh);
     }
 
     // ---- noise ----
@@ -330,8 +407,41 @@ public final class Terrain {
         return b;
     }
 
+    private static int biomeIdToLegacy(toyz.builder.terrain.BiomeId b) {
+        if (b == null) return BIOME_MEADOW;
+        switch (b) {
+            case SNOW: return BIOME_SNOW;
+            case TAIGA: return BIOME_TAIGA;
+            case FOREST: return BIOME_FOREST;
+            case MEADOW: return BIOME_MEADOW;
+            case FLOWER_MEADOW: return BIOME_FLOWER_MEADOW;
+            case JUNGLE: return BIOME_JUNGLE;
+            case SAVANNA: return BIOME_SAVANNA;
+            case DESERT: return BIOME_DESERT;
+            case SWAMP: return BIOME_SWAMP;
+            case VOLCANIC: return BIOME_VOLCANO;
+            case BIRCH: return BIOME_BIRCH;
+            case ALPINE: return BIOME_ALPINE;
+            case BADLANDS: return BIOME_BADLANDS;
+            case MESA: return BIOME_MESA;
+            case MANGROVE: return BIOME_MANGROVE;
+            case BEACH: case OCEAN: return BIOME_BEACH;
+            case HIGHLANDS: return BIOME_HIGHLANDS;
+            case DRY_FOREST: return BIOME_DRY_FOREST;
+            case FROZEN_LAKE: return BIOME_FROZEN_LAKE;
+            default: return BIOME_MEADOW;
+        }
+    }
+
     public static String biomeNameAt(ForestTerrain forest, float x, float z) {
-        return BIOME_NAMES[biomeAt(forest, x, z)];
+        if (forest != null && forest.v2 != null) {
+            try {
+                return toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, x, z).displayName();
+            } catch (Throwable ignored) {}
+        }
+        int b = biomeAt(forest, x, z);
+        if (b < 0 || b >= BIOME_NAMES.length) return "Unknown";
+        return BIOME_NAMES[b];
     }
 
     // ---- height ----
@@ -498,6 +608,7 @@ public final class Terrain {
         FloatPointer normals = new FloatPointer(vertexCount * 3);
         FloatPointer texcoords = new FloatPointer(vertexCount * 2);
         BytePointer colors = new BytePointer(vertexCount * 4);
+        int[] biomeIds = new int[vertexCount]; // for material segmentation
         ShortPointer indices = new ShortPointer(triangleCount * 3);
 
         for (int z = 0; z < vertsPerSide; z++) {
@@ -524,24 +635,19 @@ public final class Terrain {
                 float moist = moistureAt(worldX, worldZ, forest.size, seed);
                 float nxs = worldX / forest.size, nzs = worldZ / forest.size;
                 float volc = fractalNoise(nxs * 1.6f + 61f, nzs * 1.6f - 22f, seed + 404);
+                // Segment terrain by biome — V3 BiomeId is authority when present
                 int biome = biomeFromClimate(temp, moist, volc);
-                if (y > forest.heightScale * 1.05f && biome != BIOME_VOLCANO) biome = temp < 0.32f ? BIOME_SNOW : BIOME_HIGHLANDS;
-                // Sand/beach: near water or V2 beach biome
-                boolean nearWater = y <= forest.waterLevel + forest.heightScale * 0.18f;
-                if (nearWater && temp > 0.28f && biome != BIOME_SWAMP && biome != BIOME_MANGROVE)
-                    biome = BIOME_BEACH;
                 if (forest.v2 != null) {
                     try {
-                        toyz.builder.terrain.BiomeId vb =
-                            toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, worldX, worldZ);
-                        if (vb == toyz.builder.terrain.BiomeId.BEACH
-                                || vb == toyz.builder.terrain.BiomeId.DESERT)
-                            biome = (vb == toyz.builder.terrain.BiomeId.DESERT) ? BIOME_DESERT : BIOME_BEACH;
-                        if (vb == toyz.builder.terrain.BiomeId.OCEAN
-                                || vb == toyz.builder.terrain.BiomeId.FROZEN_LAKE)
-                            biome = BIOME_BEACH;
+                        biome = biomeIdToLegacy(toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, worldX, worldZ));
                     } catch (Throwable ignored) {}
                 }
+                if (y > forest.heightScale * 1.05f && biome != BIOME_VOLCANO)
+                    biome = temp < 0.32f ? BIOME_SNOW : BIOME_HIGHLANDS;
+                boolean nearWater = y <= forest.waterLevel + forest.heightScale * 0.18f;
+                if (nearWater && temp > 0.28f && biome != BIOME_SWAMP && biome != BIOME_MANGROVE
+                        && biome != BIOME_DESERT && biome != BIOME_BADLANDS)
+                    biome = BIOME_BEACH;
 
                 float riverAmt = riverInfluence(nxs, nzs, seed);
                 if (forest.v2 != null && forest.v2.water != null) {
@@ -578,18 +684,30 @@ public final class Terrain {
                 colors.put(i * 4 + 1, (byte) clamp(c.g() & 0xFF, 0f, 255f));
                 colors.put(i * 4 + 2, (byte) clamp(c.b() & 0xFF, 0f, 255f));
                 colors.put(i * 4 + 3, (byte) 255);
+                biomeIds[i] = biome;
             }
         }
+
+        // ---- Multi-material terrain: sand / rock / dirt / snow / grass (real textures) ----
+        final int MAT_GRASS = 0, MAT_SAND = 1, MAT_ROCK = 2, MAT_DIRT = 3, MAT_SNOW = 4;
+        java.util.List<short[]>[] matTris = new java.util.ArrayList[5];
+        for (int m = 0; m < 5; m++) matTris[m] = new java.util.ArrayList<>();
 
         long index = 0;
         for (int z = 0; z < cells; z++) {
             for (int x = 0; x < cells; x++) {
                 short a = (short) (z * vertsPerSide + x);
                 short b = (short) (z * vertsPerSide + x + 1);
-                short c = (short) ((z + 1) * vertsPerSide + x);
+                short cIdx = (short) ((z + 1) * vertsPerSide + x);
                 short d = (short) ((z + 1) * vertsPerSide + x + 1);
-                indices.put(index++, a); indices.put(index++, c); indices.put(index++, b);
-                indices.put(index++, b); indices.put(index++, c); indices.put(index++, d);
+                // Full mesh still gets all tris (compat / fallback)
+                indices.put(index++, a); indices.put(index++, cIdx); indices.put(index++, b);
+                indices.put(index++, b); indices.put(index++, cIdx); indices.put(index++, d);
+                // Classify triangle pair by majority biome → material
+                int mat = terrainMaterialForBiomes(biomeIds[a & 0xFFFF], biomeIds[b & 0xFFFF],
+                        biomeIds[cIdx & 0xFFFF], biomeIds[d & 0xFFFF]);
+                matTris[mat].add(new short[]{a, cIdx, b});
+                matTris[mat].add(new short[]{b, cIdx, d});
             }
         }
 
@@ -599,16 +717,34 @@ public final class Terrain {
         mesh.colors(colors);
         mesh.indices(indices);
         UploadMesh(mesh, false);
-
         forest.terrainModel = LoadModelFromMesh(mesh);
 
-        Texture grassTex = LoadTexture("assets/textures/grass/grass1.png"); if (grassTex == null || grassTex.id()==0) grassTex = LoadTexture("assets/textures/grass1.png");
-        if (grassTex != null && grassTex.id() != 0) {
-            SetTextureFilter(grassTex, TEXTURE_FILTER_BILINEAR);
-            SetTextureWrap(grassTex, TEXTURE_WRAP_REPEAT);
-            SetMaterialTexture(forest.terrainModel.materials().position(0), MATERIAL_MAP_DIFFUSE, grassTex);
-        }
-        forest.terrainModel.materials().position(0).maps().position(MATERIAL_MAP_DIFFUSE).color(WHITE);
+        Texture grassTex = loadTerrainTex("assets/textures/grass/grass1.png", "assets/textures/grass1.png");
+        Texture sandTex = loadTerrainTex("assets/textures/sand/sand1.png", "assets/textures/sand/sand2.png");
+        Texture rockTexT = loadTerrainTex("assets/textures/rocks/rock1.png", "assets/textures/stone/stone1.png");
+        Texture dirtTex = loadTerrainTex("assets/textures/dirt/dirt1.png", "assets/textures/rocks/rock3.png");
+        Texture snowTex = loadTerrainTex("assets/textures/stone/stone2.png", "assets/textures/stone/concrete.jpg");
+        Texture concreteTex = loadTerrainTex("assets/textures/stone/concrete.jpg", "assets/textures/stone/stone1.png");
+
+        forest.terrainGrass = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_GRASS]);
+        forest.terrainSand  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_SAND]);
+        forest.terrainRock  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_ROCK]);
+        forest.terrainDirt  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_DIRT]);
+        forest.terrainSnow  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_SNOW]);
+
+        assignTerrainTexture(forest.terrainGrass, grassTex);
+        assignTerrainTexture(forest.terrainSand, sandTex != null ? sandTex : grassTex);
+        // Rock prefers rock; mesa/badlands also use concrete blend via rock layer
+        assignTerrainTexture(forest.terrainRock, rockTexT != null ? rockTexT : (concreteTex != null ? concreteTex : grassTex));
+        assignTerrainTexture(forest.terrainDirt, dirtTex != null ? dirtTex : grassTex);
+        assignTerrainTexture(forest.terrainSnow, snowTex != null ? snowTex : grassTex);
+        // Legacy single model: grass texture + vertex colors (fallback if layers empty)
+        assignTerrainTexture(forest.terrainModel, grassTex);
+        System.out.println("[Terrain] materials grass=" + matTris[MAT_GRASS].size()
+                + " sand=" + matTris[MAT_SAND].size()
+                + " rock=" + matTris[MAT_ROCK].size()
+                + " dirt=" + matTris[MAT_DIRT].size()
+                + " snow=" + matTris[MAT_SNOW].size());
 
         Texture barkTex = LoadTexture("assets/textures/trees/bark1.png"); if (barkTex == null || barkTex.id()==0) barkTex = LoadTexture("assets/textures/bark1.png");
         boolean haveBark = barkTex != null && barkTex.id() != 0;
@@ -1260,7 +1396,15 @@ public final class Terrain {
     }
 
     public static void drawForestTerrain(ForestTerrain forest, Vector3 camPos, float maxDist, float time) {
-        DrawModel(forest.terrainModel, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+        // Draw biome material layers (sand/rock/dirt/snow/grass textures)
+        boolean anyLayer = false;
+        if (forest.terrainSand != null) { DrawModel(forest.terrainSand, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+        if (forest.terrainRock != null) { DrawModel(forest.terrainRock, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+        if (forest.terrainDirt != null) { DrawModel(forest.terrainDirt, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+        if (forest.terrainSnow != null) { DrawModel(forest.terrainSnow, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+        if (forest.terrainGrass != null) { DrawModel(forest.terrainGrass, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+        if (!anyLayer && forest.terrainModel != null)
+            DrawModel(forest.terrainModel, Helpers.newVector3(0, 0, 0), 1f, WHITE);
 
 
         float maxDistSq = maxDist * maxDist;
@@ -1423,6 +1567,11 @@ public final class Terrain {
         if (forest == null) return;
         // Guard each model — JavaCPP/raylib double-free → STATUS_HEAP_CORRUPTION on Windows
         unloadModelSafe(forest.terrainModel); forest.terrainModel = null;
+        unloadModelSafe(forest.terrainGrass); forest.terrainGrass = null;
+        unloadModelSafe(forest.terrainSand); forest.terrainSand = null;
+        unloadModelSafe(forest.terrainRock); forest.terrainRock = null;
+        unloadModelSafe(forest.terrainDirt); forest.terrainDirt = null;
+        unloadModelSafe(forest.terrainSnow); forest.terrainSnow = null;
         unloadModelSafe(forest.trunkModel); forest.trunkModel = null;
         unloadModelSafe(forest.trunkFatModel); forest.trunkFatModel = null;
         unloadModelSafe(forest.leafBlockModel); forest.leafBlockModel = null;
