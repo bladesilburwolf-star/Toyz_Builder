@@ -1,0 +1,18 @@
+2026-09-25 — Grok — 512 textures + GLB piece wiring
+
+Textures (assets/textures/<cat>/)
+  dirt, glass, grass, house, magma, metals, rocks, sand, stone, trees, water, wood
+  Piece + Terrain load with folder paths + flat fallback
+
+GLB preferred when present (else procedural):
+  *logh.glb / *logv.glb per wood (oak, pine, cedar, cherry, walnut, birch, mahogany, teak)
+  door1, window1, sign1, slidered
+  oakramp*, stoneramp*, boulder{small,medium,large}
+  *block.glb material blocks, magnetix *ball.glb
+  VRMan.glb for LoloPlayer piece
+  chestclosed.glb as survival spawner marker
+
+AssetBank also loads sword1-3, raft, panel, chest
+StructureSettings fort/temple/bridge/magnetix chances restored
+
+compileJava SUCCESS

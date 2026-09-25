@@ -94,6 +94,7 @@ public final class Piece {
 
     private static Texture texBark, texBark2, texMetal, texMetal2, texMetal3;
     private static Texture texPlanks, texStone, texGlass, texRoof, texRoof2;
+    private static Texture texGrass, texDirt, texSand, texMagma, texRock, texHouse;
 
     private static Texture tryLoadTex(String path) {
         Texture t = LoadTexture(path);
@@ -103,6 +104,54 @@ public final class Piece {
             return t;
         }
         return null;
+    }
+
+    /** Try several relative paths (flat + folder layout). */
+    private static Texture tryLoadTexAny(String... paths) {
+        for (String path : paths) {
+            Texture t = tryLoadTex(path);
+            if (t != null) return t;
+        }
+        return null;
+    }
+
+    /** Prefer authored GLB over procedural mesh when present. */
+    private static Model tryLoadModel(String path) {
+        try {
+            java.io.File f = new java.io.File(path);
+            if (!f.isFile()) return null;
+            Model m = LoadModel(path);
+            if (m != null && m.meshCount() > 0) {
+                System.out.println("[Piece] GLB: " + path + " meshes=" + m.meshCount());
+                return m;
+            }
+        } catch (Throwable t) {
+            System.err.println("[Piece] LoadModel fail " + path + ": " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static Model tryLoadModelAny(String... paths) {
+        for (String path : paths) {
+            Model m = tryLoadModel(path);
+            if (m != null) return m;
+        }
+        return null;
+    }
+
+    private static String woodKey(PieceColor c) {
+        if (c == null) return "oak";
+        switch (c) {
+            case Pine: return "pine";
+            case Oak: return "oak";
+            case Cedar: return "cedar";
+            case Cherry: return "cherry";
+            case Walnut: return "walnut";
+            case Birch: return "birch";
+            case Mahogany: return "mahogany";
+            case Teak: return "teak";
+            default: return "oak";
+        }
     }
 
     private static void applyDiffuse(Model model, Texture tex, Color tint) {
@@ -289,17 +338,51 @@ public final class Piece {
     }
 
     public static List<PieceDef> loadPieceDefs() {
-        if (texBark == null)   texBark   = tryLoadTex("assets/textures/bark1.png");
-        if (texBark2 == null)  texBark2  = tryLoadTex("assets/textures/bark2.png");
-        if (texMetal == null)  texMetal  = tryLoadTex("assets/textures/metal1.png");
-        if (texMetal2 == null) texMetal2 = tryLoadTex("assets/textures/metal2.png");
-        if (texMetal3 == null) texMetal3 = tryLoadTex("assets/textures/metal3.png");
-        if (texPlanks == null) texPlanks = tryLoadTex("assets/textures/planks1.png");
-        if (texStone == null)  texStone  = tryLoadTex("assets/textures/stone1.png");
-        if (texGlass == null)  texGlass  = tryLoadTex("assets/textures/glass1.png");
-        if (texRoof == null)   texRoof   = tryLoadTex("assets/textures/roof2.png");
-        if (texRoof2 == null)  texRoof2  = tryLoadTex("assets/textures/roof3.png");
-        if (texRoof == null)   texRoof   = tryLoadTex("assets/textures/rooff1.png");
+        // 512px pack under assets/textures/<category>/ (+ legacy flat paths)
+        if (texBark == null)   texBark   = tryLoadTexAny(
+            "assets/textures/trees/bark1.png", "assets/textures/bark1.png",
+            "assets/textures/wood/oakplank.jpg", "assets/textures/wood/oaklog.jpg");
+        if (texBark2 == null)  texBark2  = tryLoadTexAny(
+            "assets/textures/trees/bark2.png", "assets/textures/bark2.png",
+            "assets/textures/wood/pineplank.jpg", "assets/textures/wood/pinelog.jpg");
+        if (texMetal == null)  texMetal  = tryLoadTexAny(
+            "assets/textures/metals/metal1.png", "assets/textures/metal1.png");
+        if (texMetal2 == null) texMetal2 = tryLoadTexAny(
+            "assets/textures/metals/metal2.png", "assets/textures/metal2.png",
+            "assets/textures/metals/steel.jpg");
+        if (texMetal3 == null) texMetal3 = tryLoadTexAny(
+            "assets/textures/metals/metal3.png", "assets/textures/metal3.png",
+            "assets/textures/metals/castiron.jpg");
+        if (texPlanks == null) texPlanks = tryLoadTexAny(
+            "assets/textures/wood/oakplank.jpg", "assets/textures/wood/pineplank.jpg",
+            "assets/textures/wood/planks1.png", "assets/textures/planks1.png",
+            "assets/textures/house/housewall1.png");
+        if (texStone == null)  texStone  = tryLoadTexAny(
+            "assets/textures/stone/stone1.png", "assets/textures/stone1.png",
+            "assets/textures/stone/concrete.jpg", "assets/textures/rocks/rock1.png");
+        if (texGlass == null)  texGlass  = tryLoadTexAny(
+            "assets/textures/glass/glass1.png", "assets/textures/glass1.png",
+            "assets/textures/glass/glass2.png");
+        if (texRoof == null)   texRoof   = tryLoadTexAny(
+            "assets/textures/house/roof2.png", "assets/textures/roof2.png",
+            "assets/textures/house/rooff1.png");
+        if (texRoof2 == null)  texRoof2  = tryLoadTexAny(
+            "assets/textures/house/roof3.png", "assets/textures/roof3.png");
+        if (texGrass == null)  texGrass  = tryLoadTexAny(
+            "assets/textures/grass/grass1.png", "assets/textures/grass1.png");
+        if (texDirt == null)   texDirt   = tryLoadTexAny(
+            "assets/textures/dirt/dirt1.png", "assets/textures/dirt1.png");
+        if (texSand == null)   texSand   = tryLoadTexAny(
+            "assets/textures/sand/sand1.png", "assets/textures/sand1.png");
+        if (texMagma == null)  texMagma  = tryLoadTexAny(
+            "assets/textures/magma/magma1.png", "assets/textures/magma1.png");
+        if (texRock == null)   texRock   = tryLoadTexAny(
+            "assets/textures/rocks/rock1.png", "assets/textures/rock1.png",
+            "assets/textures/rocks/rock2.png");
+        if (texHouse == null)  texHouse  = tryLoadTexAny(
+            "assets/textures/house/housewall1.png", "assets/textures/housewall1.png");
+        System.out.println("[Piece] textures bark=" + (texBark!=null) + " metal=" + (texMetal!=null)
+            + " planks=" + (texPlanks!=null) + " stone=" + (texStone!=null) + " grass=" + (texGrass!=null));
 
         List<PieceDef> defs = new ArrayList<>();
         PieceDef d;
@@ -324,7 +407,10 @@ public final class Piece {
             d.defaultColor = woods[i];
             d.orient = PieceOrient.HORIZ;
             d.category = 1;
-            d.model = makeLogModel(LOG_LENGTH, bark, tint, true); // length along Z
+            d.model = tryLoadModelAny(
+                "assets/models/" + woodKey(woods[i]) + "logh.glb",
+                "assets/models/" + woodKey(woods[i]) + "logblock.glb");
+            if (d.model == null) d.model = makeLogModel(LOG_LENGTH, bark, tint, true); // length along Z
             d.icon = renderIcon(d.model, tint, 128);
             d.halfExtents = Helpers.newVector3(LOG_RADIUS, LOG_RADIUS, LOG_LENGTH * 0.5f);
             addSnapsEndsZ(d, LOG_LENGTH * 0.5f);
@@ -337,7 +423,8 @@ public final class Piece {
             d.defaultColor = woods[i];
             d.orient = PieceOrient.VERT;
             d.category = 1;
-            d.model = makeLogModel(LOG_LENGTH, bark, tint, false);
+            d.model = tryLoadModelAny("assets/models/" + woodKey(woods[i]) + "logv.glb");
+            if (d.model == null) d.model = makeLogModel(LOG_LENGTH, bark, tint, false);
             d.icon = renderIcon(d.model, tint, 128);
             d.halfExtents = Helpers.newVector3(LOG_RADIUS, LOG_LENGTH * 0.5f, LOG_RADIUS);
             addSnapsEndsY(d, LOG_LENGTH * 0.5f);
@@ -477,7 +564,8 @@ public final class Piece {
         addSnapsEndsY(d, 0.25f);
         defs.add(d);
 
-                d.type = PieceType.Roof; d.name = "Roof Panel";
+        d = new PieceDef();
+        d.type = PieceType.Roof; d.name = "Roof Panel";
         d.category = 1; d.defaultColor = PieceColor.Red;
         d.model = makeCubeModel(1.2f, 0.1f, 0.8f, texRoof, getColorFromEnum(PieceColor.Red));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Red), 128);
@@ -509,7 +597,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Window; d.name = "Window";
         d.category = 1;
-        d.model = makeCubeModel(0.9f, 0.9f, 0.12f, texGlass, Helpers.newColor(180, 220, 255, 200));
+        d.model = tryLoadModelAny("assets/models/window1.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(0.9f, 0.9f, 0.12f, texGlass, Helpers.newColor(180, 220, 255, 200));
         d.icon = renderIcon(d.model, Helpers.newColor(180, 220, 255, 255), 128);
         d.halfExtents = Helpers.newVector3(0.45f, 0.45f, 0.08f);
         addSnapsEndsX(d, 0.45f);
@@ -518,7 +608,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Door; d.name = "Door";
         d.category = 1; d.defaultColor = PieceColor.Walnut;
-        d.model = makeCubeModel(0.7f, 1.4f, 0.1f, texPlanks, getColorFromEnum(PieceColor.Walnut));
+        d.model = tryLoadModelAny("assets/models/door1.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(0.7f, 1.4f, 0.1f, texPlanks, getColorFromEnum(PieceColor.Walnut));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Walnut), 128);
         d.halfExtents = Helpers.newVector3(0.35f, 0.7f, 0.08f);
         addSnapsEndsY(d, 0.7f);
@@ -528,7 +620,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Sign; d.name = "Sign Board";
         d.category = 1; d.defaultColor = PieceColor.Pine;
-        d.model = makeCubeModel(0.8f, 0.5f, 0.06f, texPlanks, getColorFromEnum(PieceColor.Pine));
+        d.model = tryLoadModelAny("assets/models/sign1.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(0.8f, 0.5f, 0.06f, texPlanks, getColorFromEnum(PieceColor.Pine));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Pine), 128);
         d.halfExtents = Helpers.newVector3(0.4f, 0.25f, 0.05f);
         d.snapPoints.add(new SnapPoint(0, -0.25f, 0, 0, -1, 0));
@@ -573,7 +667,14 @@ public final class Piece {
             d.isMagnetic = true;
             d.hasLight = (col == PieceColor.White);
             d.category = 2;
-            d.model = makeBallModel(tex, tint);
+            // Prefer magnetix GLB balls when present
+            if (col == PieceColor.Steel || col == PieceColor.Iron)
+                d.model = tryLoadModelAny("assets/models/ironball.glb");
+            else if (col == PieceColor.White)
+                d.model = tryLoadModelAny("assets/models/lightball.glb", "assets/models/glassball.glb");
+            else
+                d.model = tryLoadModelAny("assets/models/glassball.glb");
+            if (d.model == null) d.model = makeBallModel(tex, tint);
             d.icon = renderIcon(d.model, tint, 128);
             d.halfExtents = Helpers.newVector3(0.25f, 0.25f, 0.25f);
             d.snapPoints.add(new SnapPoint(0, 0.22f, 0, 0, 1, 0));
@@ -700,9 +801,11 @@ public final class Piece {
         defs.add(d);
 
         d = new PieceDef();
-        d.type = PieceType.LoloPlayer; d.name = "Lolo Mascot";
+        d.type = PieceType.LoloPlayer; d.name = "VRMan";
         d.category = 4;
-        d.model = makeCubeModel(0.8f, 1f, 0.8f, texPlanks, PINK);
+        d.model = tryLoadModelAny("assets/models/VRMan.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(0.8f, 1f, 0.8f, texPlanks, PINK);
         d.icon = renderIcon(d.model, PINK, 128);
         d.halfExtents = Helpers.newVector3(0.4f, 0.5f, 0.4f);
         defs.add(d);
@@ -712,7 +815,10 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Ramp; d.name = "Ramp";
         d.category = 5; d.defaultColor = PieceColor.Oak;
-        d.model = makeCubeModel(1.5f, 0.35f, 1.0f, texPlanks, getColorFromEnum(PieceColor.Oak));
+        d.model = tryLoadModelAny(
+            "assets/models/oakrampmedium.glb", "assets/models/oakramplong.glb", "assets/models/oakrampsmall.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1.5f, 0.35f, 1.0f, texPlanks, getColorFromEnum(PieceColor.Oak));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Oak), 128);
         d.halfExtents = Helpers.newVector3(0.75f, 0.175f, 0.5f);
         d.orient = PieceOrient.ANGLE;
@@ -722,7 +828,10 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Ramp; d.name = "Ramp Stone";
         d.category = 5; d.defaultColor = PieceColor.Natural;
-        d.model = makeCubeModel(1.5f, 0.35f, 1.0f, texStone, Helpers.newColor(140, 140, 145, 255));
+        d.model = tryLoadModelAny(
+            "assets/models/stonerampmedium.glb", "assets/models/stoneramplong.glb", "assets/models/stonerampsmall.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1.5f, 0.35f, 1.0f, texStone, Helpers.newColor(140, 140, 145, 255));
         d.icon = renderIcon(d.model, Helpers.newColor(140, 140, 145, 255), 128);
         d.halfExtents = Helpers.newVector3(0.75f, 0.175f, 0.5f);
         d.orient = PieceOrient.ANGLE;
@@ -749,8 +858,15 @@ public final class Piece {
             d.isDynamic = true;
             d.defaultColor = PieceColor.Natural;
             float r = boulderR[i];
-            d.model = makeBallModel(texStone != null ? texStone : texMetal,
-                Helpers.newColor(110, 105, 100, 255));
+            String[] bPaths = {
+                "assets/models/bouldersmall.glb",
+                "assets/models/bouldermedium.glb",
+                "assets/models/boulderlarge.glb"
+            };
+            d.model = tryLoadModelAny(bPaths[i]);
+            if (d.model == null)
+                d.model = makeBallModel(texRock != null ? texRock : (texStone != null ? texStone : texMetal),
+                    Helpers.newColor(110, 105, 100, 255));
             // scale via halfExtents only — draw uses unit sphere; scale in draw later
             d.icon = renderIcon(d.model, Helpers.newColor(110, 105, 100, 255), 128);
             d.halfExtents = Helpers.newVector3(r, r, r);
@@ -761,7 +877,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.Slide; d.name = "Slide";
         d.category = 5; d.defaultColor = PieceColor.Red;
-        d.model = makeCubeModel(2.0f, 0.10f, 0.7f, texMetal, getColorFromEnum(PieceColor.Red));
+        d.model = tryLoadModelAny("assets/models/slidered.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(2.0f, 0.10f, 0.7f, texMetal, getColorFromEnum(PieceColor.Red));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Red), 128);
         d.halfExtents = Helpers.newVector3(1.0f, 0.05f, 0.35f);
         d.orient = PieceOrient.ANGLE;
@@ -787,7 +905,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.BlockWood; d.name = "Block Wood";
         d.category = 5; d.defaultColor = PieceColor.Oak;
-        d.model = makeCubeModel(1f, 1f, 1f, texPlanks, getColorFromEnum(PieceColor.Oak));
+        d.model = tryLoadModelAny("assets/models/oakblock.glb", "assets/models/pineblock.glb", "assets/models/oaklogblock.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 1f, 1f, texPlanks, getColorFromEnum(PieceColor.Oak));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Oak), 128);
         d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
         addSnapsEndsY(d, 0.5f); addSnapsEndsX(d, 0.5f); addSnapsEndsZ(d, 0.5f);
@@ -796,7 +916,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.BlockStone; d.name = "Block Stone";
         d.category = 5;
-        d.model = makeCubeModel(1f, 1f, 1f, texStone, Helpers.newColor(130, 130, 135, 255));
+        d.model = tryLoadModelAny("assets/models/rockblock.glb", "assets/models/concreteblock.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 1f, 1f, texStone, Helpers.newColor(130, 130, 135, 255));
         d.icon = renderIcon(d.model, Helpers.newColor(130, 130, 135, 255), 128);
         d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
         addSnapsEndsY(d, 0.5f); addSnapsEndsX(d, 0.5f); addSnapsEndsZ(d, 0.5f);
@@ -805,7 +927,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.BlockMetal; d.name = "Block Metal";
         d.category = 5; d.defaultColor = PieceColor.Steel;
-        d.model = makeCubeModel(1f, 1f, 1f, texMetal, getColorFromEnum(PieceColor.Steel));
+        d.model = tryLoadModelAny("assets/models/steelblock.glb", "assets/models/ironblock.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 1f, 1f, texMetal, getColorFromEnum(PieceColor.Steel));
         d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Steel), 128);
         d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
         addSnapsEndsY(d, 0.5f); addSnapsEndsX(d, 0.5f); addSnapsEndsZ(d, 0.5f);
@@ -814,7 +938,9 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.BlockSand; d.name = "Block Sand";
         d.category = 5; d.defaultColor = PieceColor.Yellow;
-        d.model = makeCubeModel(1f, 1f, 1f, texStone, Helpers.newColor(210, 190, 140, 255));
+        d.model = tryLoadModelAny("assets/models/sandblock.glb", "assets/models/dirtblock.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 1f, 1f, texSand != null ? texSand : texStone, Helpers.newColor(210, 190, 140, 255));
         d.icon = renderIcon(d.model, Helpers.newColor(210, 190, 140, 255), 128);
         d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
         addSnapsEndsY(d, 0.5f);
@@ -823,8 +949,10 @@ public final class Piece {
         d = new PieceDef();
         d.type = PieceType.BlockGlass; d.name = "Block Glass";
         d.category = 5; d.defaultColor = PieceColor.White;
-        d.model = makeCubeModel(1f, 1f, 1f, texGlass != null ? texGlass : texMetal,
-            Helpers.newColor(180, 220, 230, 180));
+        d.model = tryLoadModelAny("assets/models/glassblock.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 1f, 1f, texGlass != null ? texGlass : texMetal,
+                Helpers.newColor(180, 220, 230, 180));
         d.icon = renderIcon(d.model, Helpers.newColor(180, 220, 230, 255), 128);
         d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
         addSnapsEndsY(d, 0.5f);

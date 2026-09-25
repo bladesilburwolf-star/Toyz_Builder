@@ -506,7 +506,7 @@ public final class Terrain {
 
         forest.terrainModel = LoadModelFromMesh(mesh);
 
-        Texture grassTex = LoadTexture("assets/textures/grass1.png");
+        Texture grassTex = LoadTexture("assets/textures/grass/grass1.png"); if (grassTex == null || grassTex.id()==0) grassTex = LoadTexture("assets/textures/grass1.png");
         if (grassTex != null && grassTex.id() != 0) {
             SetTextureFilter(grassTex, TEXTURE_FILTER_BILINEAR);
             SetTextureWrap(grassTex, TEXTURE_WRAP_REPEAT);
@@ -514,7 +514,7 @@ public final class Terrain {
         }
         forest.terrainModel.materials().position(0).maps().position(MATERIAL_MAP_DIFFUSE).color(WHITE);
 
-        Texture barkTex = LoadTexture("assets/textures/bark1.png");
+        Texture barkTex = LoadTexture("assets/textures/trees/bark1.png"); if (barkTex == null || barkTex.id()==0) barkTex = LoadTexture("assets/textures/bark1.png");
         boolean haveBark = barkTex != null && barkTex.id() != 0;
         if (haveBark) {
             SetTextureFilter(barkTex, TEXTURE_FILTER_BILINEAR);
@@ -561,9 +561,9 @@ public final class Terrain {
         forest.rockBlockModel = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
         forest.magmaBlockModel = LoadModelFromMesh(GenMeshCube(1.0f, 0.2f, 1.0f));
         forest.featureBlockModel = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
-        Texture rockTex = LoadTexture("assets/textures/rock1.png");
+        Texture rockTex = LoadTexture("assets/textures/rocks/rock1.png"); if (rockTex == null || rockTex.id()==0) rockTex = LoadTexture("assets/textures/rock1.png");
         if (rockTex == null || rockTex.id() == 0)
-            rockTex = LoadTexture("assets/textures/stone1.png");
+            rockTex = LoadTexture("assets/textures/stone/stone1.png"); if (rockTex == null || rockTex.id()==0) rockTex = LoadTexture("assets/textures/stone1.png");
         if (rockTex != null && rockTex.id() != 0) {
             SetTextureFilter(rockTex, TEXTURE_FILTER_BILINEAR);
             SetTextureWrap(rockTex, TEXTURE_WRAP_REPEAT);
@@ -573,7 +573,7 @@ public final class Terrain {
             forest.rockBlockModel.materials().position(0).maps().position(MATERIAL_MAP_DIFFUSE)
                 .color(Helpers.newColor(110, 105, 100, 255));
         }
-        Texture magmaTex = LoadTexture("assets/textures/magma1.png");
+        Texture magmaTex = LoadTexture("assets/textures/magma/magma1.png"); if (magmaTex == null || magmaTex.id()==0) magmaTex = LoadTexture("assets/textures/magma1.png");
         if (magmaTex != null && magmaTex.id() != 0) {
             SetTextureFilter(magmaTex, TEXTURE_FILTER_BILINEAR);
             SetTextureWrap(magmaTex, TEXTURE_WRAP_REPEAT);

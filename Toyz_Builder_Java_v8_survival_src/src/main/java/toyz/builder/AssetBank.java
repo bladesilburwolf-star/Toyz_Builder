@@ -47,6 +47,11 @@ public final class AssetBank {
     public static Model modelBat;
     public static Model modelPede;
     public static Model modelNib;
+    public static Model modelChest;
+    public static Model modelSword1, modelSword2, modelSword3;
+    public static Model modelRaft;
+    public static Model modelPanel;
+
 
     /** Default world scale applied when drawing GLBs (Blender units → game). */
     public static final float MODEL_SCALE = 0.28f;   // enemy GLBs (was 0.55 — too large)
@@ -165,6 +170,13 @@ public final class AssetBank {
         modelBat = loadModelFirst("assets/models/bat.glb");
         modelPede = loadModelFirst("assets/models/Pede.glb", "assets/models/boss_pede.glb");
         modelNib = loadModelFirst("assets/models/nib.glb");
+        modelChest = loadModelFirst("assets/models/chestclosed.glb");
+        modelSword1 = loadModelFirst("assets/models/sword1.glb");
+        modelSword2 = loadModelFirst("assets/models/sword2.glb");
+        modelSword3 = loadModelFirst("assets/models/sword3.glb");
+        modelRaft = loadModelFirst("assets/models/raft.glb");
+        modelPanel = loadModelFirst("assets/models/panelblock.glb");
+
 
         int texN = 0, modN = 0;
         for (Texture t : texCache.values()) if (t != null) texN++;

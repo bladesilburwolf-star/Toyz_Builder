@@ -60,6 +60,10 @@ public final class MapSystem {
         public int wallLevels = 3;
         public boolean includeRoofs = true;
         public boolean includeDoorsWindows = true;
+        public float fortChance = 0.28f;
+        public float templeChance = 0.32f;
+        public float bridgeChance = 0.18f;
+        public float magnetixChance = 0.35f;
     }
 
     private static float structureHash(int x, int z, int seed) {

@@ -149,8 +149,12 @@ public final class Survival {
         if (!enabled) return;
         Mob.drawAll(mobs, camera);
         for (Mob.Spawner sp : spawners) {
-            DrawCube(sp.pos, 0.6f, 1.2f, 0.6f, Helpers.newColor(80, 40, 100, 220));
-            DrawCubeWires(sp.pos, 0.6f, 1.2f, 0.6f, Helpers.newColor(180, 80, 255, 255));
+            if (AssetBank.modelChest != null && AssetBank.modelChest.meshCount() > 0) {
+                AssetBank.drawModel(AssetBank.modelChest, sp.pos, 0f, 0.45f, WHITE);
+            } else {
+                DrawCube(sp.pos, 0.6f, 1.2f, 0.6f, Helpers.newColor(80, 40, 100, 220));
+                DrawCubeWires(sp.pos, 0.6f, 1.2f, 0.6f, Helpers.newColor(180, 80, 255, 255));
+            }
         }
     }
 
