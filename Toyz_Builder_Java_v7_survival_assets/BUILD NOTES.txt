@@ -1,0 +1,22 @@
+Toyz Builder Java v4 — Landscape
+
+Based on v3 Stable (no mid-session UnloadModel).
+
+NEW:
+- Cave sinkholes in heightmap + dark pit + rock-ring mouths
+- Magma pools in volcanic zones (magma1.png, pulsing color)
+- Rock outcrops (rock1/stone1) denser in desert / snow / volcano
+- 8 leaf tints per tree family + birch + blossom rare oaks
+- HUD: BIOME name under weather
+
+Still surface-caves only (heightmap depressions). True hollow meshes later.
+Segment-style props, not full chunk system yet.
+
+compileJava: SUCCESS
+
+
+V5 TERRAIN PASS
+- Terrain.java expanded to 20 biomes and 640m world target.
+- Added local water bodies, frozen water state, and natural landform features.
+- Gradle wrapper JAR was not present in the supplied ZIP, so compileJava could not be executed in this environment.
+- Structural source checks passed (balanced braces/parentheses).
