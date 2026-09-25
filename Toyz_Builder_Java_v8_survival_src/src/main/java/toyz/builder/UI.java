@@ -31,6 +31,8 @@ public final class UI {
         public int worldSelected = 0;
         public int worldTypeIndex = 1;
         public boolean structures = true;
+        public int mapgenPresetIndex = 4; // V2=0 .. V7=5, default V6
+        public boolean skyIslands = false;
         public String seedText = "RANDOM";
     }
 
@@ -246,7 +248,7 @@ public final class UI {
     public static WorldAction drawWorldCreation(TitleMenuState state, boolean hasController) {
         int sw = GetScreenWidth(), sh = GetScreenHeight();
         DrawRectangle(0, 0, sw, sh, Helpers.newColor(7, 9, 12, 255));
-        float panelW = Math.min(620f, sw - 80f), panelH = Math.min(570f, sh - 80f);
+        float panelW = Math.min(620f, sw - 80f), panelH = Math.min(640f, sh - 60f);
         Rectangle panel = Helpers.newRectangle((sw - panelW) * 0.5f, (sh - panelH) * 0.5f, panelW, panelH);
         drawSteelPanel(panel, "CREATE NEW WORLD  //  WORLD GENERATOR");
 
@@ -262,7 +264,21 @@ public final class UI {
         Rectangle sr = Helpers.newRectangle(x, y + 22, w, 42);
         if (drawSteelButton(sr, state.structures ? "GENERATE STRUCTURES" : "NO STRUCTURES", state.structures)) state.structures = !state.structures;
 
-        y += 90;
+        y += 80;
+        DrawText("MAPGEN PRESET  (V2..V7)", (int)x, (int)y, 16, PHOSPHOR_DIM); y += 22;
+        String[] presets = { "V2", "V3", "V4", "V5", "V6", "V7" };
+        float pw = w / 6f;
+        for (int i = 0; i < presets.length; i++) {
+            Rectangle r = Helpers.newRectangle(x + i * pw, y, pw - 6f, 36);
+            if (drawSteelButton(r, presets[i], state.mapgenPresetIndex == i)) state.mapgenPresetIndex = i;
+        }
+        y += 50;
+        DrawText("SKY ISLANDS", (int)x, (int)y, 16, PHOSPHOR_DIM);
+        Rectangle skyR = Helpers.newRectangle(x, y + 20, w, 36);
+        if (drawSteelButton(skyR, state.skyIslands ? "SKY ISLANDS ON" : "SKY ISLANDS OFF", state.skyIslands))
+            state.skyIslands = !state.skyIslands;
+
+        y += 75;
         DrawText("WORLD SEED  (letters/numbers allowed)", (int)x, (int)y, 16, PHOSPHOR_DIM);
         Rectangle seedBox = Helpers.newRectangle(x, y + 22, w, 42);
         DrawRectangleRec(seedBox, STEEL_EDGE);

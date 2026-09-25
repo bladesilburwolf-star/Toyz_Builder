@@ -159,6 +159,10 @@ public final class Terrain {
         public Model rockBlockModel;   // GenMeshCube for outcrops / cave mouths
         public Model magmaBlockModel;  // flat-ish cube for lava surface
         public Model featureBlockModel; // V5 landforms
+        /** Authored GLB logs (preferred over GenMesh cylinders). */
+        public Model logVertOak, logVertPine, logVertBirch, logVertJungle;
+        public Model logHorizOak, logHorizPine, logHorizBirch;
+        public Model boulderSmall, boulderMed, boulderLarge;
         public List<ForestTree> trees = new ArrayList<>();
         public List<Vegetation> vegetation = new ArrayList<>();
         public List<MagmaPool> magmaPools = new ArrayList<>();
@@ -174,11 +178,47 @@ public final class Terrain {
         public int seed = 0xC0FFEE;
         public WorldType worldType = WorldType.NORMAL;
         public boolean structuresEnabled = true;
+        /** Terrain V2/V3 continuous world data (height, biomes, rivers, structure sites). */
+        public toyz.builder.terrain.TerrainGenerator.WorldData v2;
+        public Model waterOceanMesh, waterRiverMesh, waterFrozenMesh;
+        public java.util.List<toyz.builder.terrain.SkyIslandGenerator.Island> skyIslands =
+            new java.util.ArrayList<>();
     }
+
+    /** Active V2 during mesh generation so heightAt() samples continuous landforms. */
+    private static toyz.builder.terrain.TerrainGenerator.WorldData activeV2;
+    /** Set from title menu before generateForestTerrain. */
+    public static int pendingMapgenPreset = 4; // V6
+    public static boolean pendingSkyIslands = false;
+
 
     private static final float WATER_LEVEL_FRAC = -0.30f;
 
     private Terrain() {}
+
+    private static Model tryLoadGlb(String path) {
+        try {
+            java.io.File f = new java.io.File(path);
+            if (!f.isFile()) return null;
+            Model m = LoadModel(path);
+            if (m != null && m.meshCount() > 0) {
+                System.out.println("[Terrain] GLB tree/prop: " + path);
+                return m;
+            }
+        } catch (Throwable t) {
+            System.err.println("[Terrain] GLB fail " + path + ": " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static Model trunkForBiome(ForestTerrain f, int biomeType) {
+        if (biomeType == 1 && f.logVertPine != null) return f.logVertPine;
+        if (biomeType == 6 && f.logVertJungle != null) return f.logVertJungle;
+        if ((biomeType == 0 || biomeType == 2) && f.logVertOak != null) return f.logVertOak;
+        if (biomeType == 4 && f.logVertBirch != null) return f.logVertBirch;
+        if (f.logVertOak != null) return f.logVertOak;
+        return (biomeType == 6 && f.trunkFatModel != null) ? f.trunkFatModel : f.trunkModel;
+    }
 
     // ---- noise ----
 
@@ -299,6 +339,8 @@ public final class Terrain {
     private static WorldType activeWorldType = WorldType.NORMAL;
 
     private static float heightAt(float x, float z, float size, float heightScale, int seed) {
+        if (activeV2 != null)
+            return toyz.builder.terrain.TerrainGenerator.getHeight(activeV2, x, z);
         float nx = x / size, nz = z / size;
         if (activeWorldType == WorldType.FLAT) {
             float detailFlat = fractalNoise(nx * 10f + 7f, nz * 10f - 3f, seed + 901);
@@ -383,6 +425,8 @@ public final class Terrain {
     }
 
     public static float getTerrainHeight(ForestTerrain forest, float x, float z) {
+        if (forest != null && forest.v2 != null)
+            return toyz.builder.terrain.TerrainGenerator.getHeight(forest.v2, x, z);
         return heightAt(x, z, forest.size, forest.heightScale, forest.seed);
     }
 
@@ -411,6 +455,36 @@ public final class Terrain {
         forest.cellSize = 4.0f;
         forest.heightScale = 16f;
         forest.waterLevel = forest.heightScale * WATER_LEVEL_FRAC;
+
+        // ---- Terrain V2 (continuous landforms / biomes / rivers / structure sites) ----
+        try {
+            toyz.builder.terrain.WorldConfig v2cfg =
+                toyz.builder.terrain.WorldConfig.fromLegacy(seed, forest.worldType, structuresEnabled);
+            v2cfg.size = forest.size;
+            v2cfg.heightScale = forest.heightScale;
+            v2cfg.sampleSpacing = forest.cellSize;
+            v2cfg.meshSpacing = forest.cellSize;
+            // V3 defaults: V6 mapgen, sky islands off until menu exposes toggle
+            int pi = Math.max(0, Math.min(5, pendingMapgenPreset));
+            v2cfg.preset = toyz.builder.terrain.WorldConfig.MapgenPreset.values()[pi];
+            v2cfg.skyIslands = pendingSkyIslands;
+            v2cfg.applyPresetTuning();
+            activeV2 = toyz.builder.terrain.TerrainGenerator.generate(v2cfg);
+            forest.v2 = activeV2;
+            forest.waterLevel = activeV2.oceanLevel;
+            if (activeV2.waterMeshes != null) {
+                forest.waterOceanMesh = activeV2.waterMeshes.ocean;
+                forest.waterRiverMesh = activeV2.waterMeshes.rivers;
+                forest.waterFrozenMesh = activeV2.waterMeshes.frozen;
+            }
+            forest.skyIslands = activeV2.skyIslands != null ? activeV2.skyIslands
+                    : new java.util.ArrayList<>();
+        } catch (Throwable t) {
+            System.err.println("[Terrain] V2 init failed, legacy height: " + t.getMessage());
+            t.printStackTrace();
+            forest.v2 = null;
+            activeV2 = null;
+        }
 
         int cells = (int) (forest.size / forest.cellSize);
         cells = Math.min(cells, 160);
@@ -452,9 +526,31 @@ public final class Terrain {
                 float volc = fractalNoise(nxs * 1.6f + 61f, nzs * 1.6f - 22f, seed + 404);
                 int biome = biomeFromClimate(temp, moist, volc);
                 if (y > forest.heightScale * 1.05f && biome != BIOME_VOLCANO) biome = temp < 0.32f ? BIOME_SNOW : BIOME_HIGHLANDS;
-                if (y <= forest.waterLevel + forest.heightScale * 0.10f && temp > 0.28f && biome != BIOME_SWAMP && biome != BIOME_MANGROVE) biome = BIOME_BEACH;
+                // Sand/beach: near water or V2 beach biome
+                boolean nearWater = y <= forest.waterLevel + forest.heightScale * 0.18f;
+                if (nearWater && temp > 0.28f && biome != BIOME_SWAMP && biome != BIOME_MANGROVE)
+                    biome = BIOME_BEACH;
+                if (forest.v2 != null) {
+                    try {
+                        toyz.builder.terrain.BiomeId vb =
+                            toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, worldX, worldZ);
+                        if (vb == toyz.builder.terrain.BiomeId.BEACH
+                                || vb == toyz.builder.terrain.BiomeId.DESERT)
+                            biome = (vb == toyz.builder.terrain.BiomeId.DESERT) ? BIOME_DESERT : BIOME_BEACH;
+                        if (vb == toyz.builder.terrain.BiomeId.OCEAN
+                                || vb == toyz.builder.terrain.BiomeId.FROZEN_LAKE)
+                            biome = BIOME_BEACH;
+                    } catch (Throwable ignored) {}
+                }
 
                 float riverAmt = riverInfluence(nxs, nzs, seed);
+                if (forest.v2 != null && forest.v2.water != null) {
+                    float rd = forest.v2.water.riverDistance(worldX, worldZ);
+                    float rw = forest.v2.water.riverWidthAt(worldX, worldZ);
+                    if (rd < rw * 2.5f) riverAmt = Math.max(riverAmt, 1f - rd / (rw * 2.5f));
+                    if (rd < rw * 1.8f && y <= forest.waterLevel + forest.heightScale * 0.2f)
+                        biome = BIOME_BEACH;
+                }
                 float heightFactor = clamp((y + forest.heightScale * 0.4f) / (forest.heightScale * 1.2f), 0f, 1f);
                 float shade = 0.75f + heightFactor * 0.35f;
                 Color c = biomeColor(biome, shade, riverAmt);
@@ -521,11 +617,23 @@ public final class Terrain {
             SetTextureWrap(barkTex, TEXTURE_WRAP_REPEAT);
         }
 
-        // ---- HYBRID TREE PART MODELS ----
-        // Semi-rounded trunks: low-segment cylinders look like Minecraft logs
-        // with softened edges. Leaves are 1-block cubes (Minecraft-style).
-        forest.trunkModel = LoadModelFromMesh(GenMeshCylinder(0.32f, 1.0f, 8)); // 1 block tall segment
-        forest.trunkFatModel = LoadModelFromMesh(GenMeshCylinder(0.42f, 1.0f, 8)); // jungle/old-growth trunk
+        // ---- TREE PART MODELS (prefer fixed GLB logs over GenMesh cylinders) ----
+        forest.logVertOak = tryLoadGlb("assets/models/oaklogv.glb");
+        forest.logVertPine = tryLoadGlb("assets/models/pinelogv.glb");
+        forest.logVertBirch = tryLoadGlb("assets/models/birchlogv.glb");
+        forest.logVertJungle = tryLoadGlb("assets/models/mahoganylogv.glb");
+        forest.logHorizOak = tryLoadGlb("assets/models/oaklogh.glb");
+        forest.logHorizPine = tryLoadGlb("assets/models/pinelogh.glb");
+        forest.logHorizBirch = tryLoadGlb("assets/models/birchlogh.glb");
+        forest.boulderSmall = tryLoadGlb("assets/models/bouldersmall.glb");
+        forest.boulderMed = tryLoadGlb("assets/models/bouldermedium.glb");
+        forest.boulderLarge = tryLoadGlb("assets/models/boulderlarge.glb");
+
+        forest.trunkModel = forest.logVertOak != null ? forest.logVertOak
+                : LoadModelFromMesh(GenMeshCylinder(0.32f, 1.0f, 8));
+        forest.trunkFatModel = forest.logVertJungle != null ? forest.logVertJungle
+                : (forest.logVertOak != null ? forest.logVertOak
+                : LoadModelFromMesh(GenMeshCylinder(0.42f, 1.0f, 8)));
         forest.leafBlockModel = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
         forest.leafBlockSmallModel = LoadModelFromMesh(GenMeshCube(0.55f, 0.55f, 0.55f));
         forest.spruceBlockModel = LoadModelFromMesh(GenMeshCone(0.55f, 1.0f, 4)); // semi-rounded spruce tier
@@ -787,40 +895,69 @@ public final class Terrain {
             }
         }
 
-        // ---- V5 local lakes and river water ----
-        final float lakeSpacing = 42f;
-        for (float zPos = -caveArea; zPos <= caveArea; zPos += lakeSpacing) {
-            for (float xPos = -caveArea; xPos <= caveArea; xPos += lakeSpacing) {
-                float px = xPos + (hash2D((int)xPos, (int)zPos, seed + 3601) - 0.5f) * 24f;
-                float pz = zPos + (hash2D((int)zPos, (int)xPos, seed + 3701) - 0.5f) * 24f;
-                float gy = heightAt(px, pz, forest.size, forest.heightScale, seed);
-                float lakeNoise = fractalNoise(px / forest.size * 7f + 17f, pz / forest.size * 7f - 13f, seed + 3801);
-                if (gy < forest.waterLevel + forest.heightScale * 0.18f && lakeNoise > 0.63f) {
-                    WaterBody water = new WaterBody();
-                    water.position = Helpers.newVector3(px, forest.waterLevel + 0.02f, pz);
-                    water.radiusX = 6f + lakeNoise * 18f;
-                    water.radiusZ = 5f + lakeNoise * 14f;
-                    water.frozen = temperatureAt(px, pz, forest.size, seed) < 0.28f;
-                    water.river = false;
-                    forest.waterBodies.add(water);
-                }
+                // ---- Water surfaces (V2 rivers/ocean + flood fill where terrain is submerged) ----
+        forest.waterBodies.clear();
+        final float surfaceY = forest.waterLevel + 0.06f;
+        // Dense samples where height is below water surface → visible lakes/ocean pockets
+        final float waterSpacing = 10f;
+        for (float zPos = -caveArea; zPos <= caveArea; zPos += waterSpacing) {
+            for (float xPos = -caveArea; xPos <= caveArea; xPos += waterSpacing) {
+                float gy = heightAt(xPos, zPos, forest.size, forest.heightScale, seed);
+                if (gy > forest.waterLevel - 0.05f) continue;
+                WaterBody water = new WaterBody();
+                water.position = Helpers.newVector3(xPos, surfaceY, zPos);
+                water.radiusX = waterSpacing * 0.65f;
+                water.radiusZ = waterSpacing * 0.65f;
+                water.frozen = temperatureAt(xPos, zPos, forest.size, seed) < 0.28f;
+                water.river = false;
+                forest.waterBodies.add(water);
             }
         }
-        // Segmented river surfaces follow the same river influence used to carve terrain.
-        for (float zPos = -caveArea; zPos <= caveArea; zPos += 18f) {
-            float nzr = zPos / forest.size;
-            float ri = riverInfluence(0f, nzr, seed);
-            if (ri < 0.08f) continue;
-            float meander = (fractalNoise(nzr * 3f + 50f, 5f, seed + 777) - 0.5f) * 0.50f;
-            float px = meander * forest.size;
-            WaterBody water = new WaterBody();
-            water.position = Helpers.newVector3(px, forest.waterLevel + 0.03f, zPos);
-            water.radiusX = 2.5f + ri * 4.0f;
-            water.radiusZ = 10f;
-            water.frozen = temperatureAt(px, zPos, forest.size, seed) < 0.25f;
-            water.river = true;
-            forest.waterBodies.add(water);
+        // V2 river polylines → continuous water ribbon
+        if (forest.v2 != null && forest.v2.water != null) {
+            for (toyz.builder.terrain.WaterGenerator.RiverPath river : forest.v2.water.rivers) {
+                for (int i = 0; i < river.xs.length; i++) {
+                    float px = river.xs[i];
+                    float pz = river.zs[i];
+                    WaterBody water = new WaterBody();
+                    water.position = Helpers.newVector3(px, surfaceY, pz);
+                    water.radiusX = Math.max(2.5f, river.width * 0.55f);
+                    water.radiusZ = Math.max(3.5f, river.width * 0.85f);
+                    water.frozen = temperatureAt(px, pz, forest.size, seed) < 0.25f;
+                    water.river = true;
+                    forest.waterBodies.add(water);
+                }
+                // scatter a few horizontal log decorations on banks
+                if (forest.logHorizOak != null || forest.logHorizPine != null) {
+                    for (int i = 3; i < river.xs.length - 3; i += 7) {
+                        float px = river.xs[i] + river.width * 1.2f;
+                        float pz = river.zs[i];
+                        float gy = heightAt(px, pz, forest.size, forest.heightScale, seed);
+                        if (gy < forest.waterLevel + 0.2f) continue;
+                        // store as tiny land feature via trees list? use LandFeature if available
+                        // draw later in drawForest via water bank pass
+                    }
+                }
+            }
+        } else {
+            // Legacy river ribbon fallback
+            for (float zPos = -caveArea; zPos <= caveArea; zPos += 12f) {
+                float nzr = zPos / forest.size;
+                float ri = riverInfluence(0f, nzr, seed);
+                if (ri < 0.15f) continue;
+                float meander = (fractalNoise(nzr * 3f + 50f, 5f, seed + 777) - 0.5f) * forest.size * 0.25f;
+                float px = meander;
+                WaterBody water = new WaterBody();
+                water.position = Helpers.newVector3(px, surfaceY, zPos);
+                water.radiusX = 2.5f + ri * 4.0f;
+                water.radiusZ = 10f;
+                water.frozen = temperatureAt(px, zPos, forest.size, seed) < 0.25f;
+                water.river = true;
+                forest.waterBodies.add(water);
+            }
         }
+        System.out.println("[Terrain] waterBodies=" + forest.waterBodies.size()
+                + " waterLevel=" + forest.waterLevel);
 
         // ---- rock outcrops (desert / mountain / volcano segments) ----
         final float rockSpacing = 16f;
@@ -854,6 +991,11 @@ public final class Terrain {
             }
         }
 
+        activeV2 = null; // height queries use forest.v2 via getTerrainHeight
+        if (forest.v2 != null) {
+            System.out.println("[Terrain] V2 active biomes/sites bridged; structureSites="
+                + forest.v2.structureSites.size() + " bridges=" + forest.v2.bridgeSites.size());
+        }
         return forest;
     }
 
@@ -909,11 +1051,38 @@ public final class Terrain {
     };
 
     private static void drawTrunk(ForestTerrain f, Vector3 pos, float scale, int blocks, boolean fat) {
-        Model m = fat ? f.trunkFatModel : f.trunkModel;
-        for (int i = 0; i < blocks; i++) {
-            DrawModel(m, Helpers.newVector3(pos.x(), pos.y() + (i + 0.5f) * scale, pos.z()),
-                     scale, WHITE);
+        drawTrunk(f, pos, scale, blocks, fat, 0);
+    }
+
+    private static void drawTrunk(ForestTerrain f, Vector3 pos, float scale, int blocks, boolean fat, int biomeType) {
+        Model m = trunkForBiome(f, fat ? 6 : biomeType);
+        // GLB logs are full-height pieces — stack fewer, scale to segment height
+        boolean glb = (m == f.logVertOak || m == f.logVertPine || m == f.logVertBirch || m == f.logVertJungle);
+        if (glb) {
+            float seg = scale * 1.05f;
+            int n = Math.max(1, blocks);
+            for (int i = 0; i < n; i++) {
+                DrawModelEx(m,
+                    Helpers.newVector3(pos.x(), pos.y() + (i + 0.5f) * seg, pos.z()),
+                    Helpers.newVector3(0, 1, 0), 0f,
+                    Helpers.newVector3(seg, seg, seg), WHITE);
+            }
+        } else {
+            for (int i = 0; i < blocks; i++) {
+                DrawModel(m, Helpers.newVector3(pos.x(), pos.y() + (i + 0.5f) * scale, pos.z()),
+                         scale, WHITE);
+            }
         }
+    }
+
+    /** Fallen / horizontal log decoration using *logh.glb. */
+    private static void drawHorizLog(ForestTerrain f, float x, float y, float z, float scale, float yaw) {
+        Model m = f.logHorizOak != null ? f.logHorizOak
+                : (f.logHorizPine != null ? f.logHorizPine : f.logHorizBirch);
+        if (m == null) return;
+        DrawModelEx(m, Helpers.newVector3(x, y + scale * 0.35f, z),
+                Helpers.newVector3(0, 1, 0), yaw,
+                Helpers.newVector3(scale, scale, scale), WHITE);
     }
 
     /** Draws a Minecraft-style blobby canopy: cluster of leaf cubes around a center block. */
@@ -1028,7 +1197,7 @@ public final class Terrain {
         float x = t.position.x(), y0 = t.position.y(), z = t.position.z();
         int cv = t.colorVariant & 7;
         int trunkBlocks = Math.max(2, (int) (2.8f * s));
-        drawTrunk(f, t.position, s, trunkBlocks, false);
+        drawTrunk(f, t.position, s, trunkBlocks, false, t.biomeType);
         float baseY = y0 + trunkBlocks * s;
         // Minecraft oak shape: 2x2 leaf layer, 1x2 layer above, cap block
         float u = 0.5f * s;
@@ -1098,20 +1267,41 @@ public final class Terrain {
         float lodFarSq = (maxDist * 0.55f) * (maxDist * 0.55f);
         float propDistSq = (maxDist * 0.85f) * (maxDist * 0.85f);
 
-        // V5: water is localized to generated lakes and river segments.
-        if (forest.waterBodies != null) {
+        // V3: continuous water meshes (no tile cubes)
+        Color oceanCol = Helpers.newColor(45, 110, 170, 200);
+        Color riverCol = Helpers.newColor(40, 130, 190, 210);
+        Color frozenCol = Helpers.newColor(200, 225, 235, 230);
+        if (forest.waterOceanMesh != null && forest.waterOceanMesh.meshCount() > 0) {
+            DrawModel(forest.waterOceanMesh, Helpers.newVector3(0, 0, 0), 1f, oceanCol);
+        }
+        if (forest.waterRiverMesh != null && forest.waterRiverMesh.meshCount() > 0) {
+            DrawModel(forest.waterRiverMesh, Helpers.newVector3(0, 0, 0), 1f, riverCol);
+        }
+        if (forest.waterFrozenMesh != null && forest.waterFrozenMesh.meshCount() > 0) {
+            DrawModel(forest.waterFrozenMesh, Helpers.newVector3(0, 0, 0), 1f, frozenCol);
+        }
+        // Fallback only if V3 meshes missing
+        if (forest.waterOceanMesh == null && forest.waterRiverMesh == null
+                && forest.waterBodies != null) {
             for (WaterBody water : forest.waterBodies) {
                 float dx = water.position.x() - camPos.x();
                 float dz = water.position.z() - camPos.z();
                 float reach = Math.max(water.radiusX, water.radiusZ);
                 if (dx * dx + dz * dz > (maxDist + reach) * (maxDist + reach)) continue;
-                Color wc = water.frozen
-                    ? Helpers.newColor(190, 218, 228, 255)
-                    : (water.river
-                        ? Helpers.newColor(48, 125, 185, 255)
-                        : Helpers.newColor(52, 112, 165, 255));
-                DrawCube(water.position, water.radiusX * 2f, 0.10f, water.radiusZ * 2f,
-                    Fade(wc, water.frozen ? 0.92f : 0.68f));
+                water.position.y(forest.waterLevel + 0.05f);
+                Color wc = water.frozen ? frozenCol : (water.river ? riverCol : oceanCol);
+                DrawCube(water.position, water.radiusX * 2f, 0.08f, water.radiusZ * 2f, Fade(wc, 0.75f));
+            }
+        }
+
+        // Sky islands (continuous meshes)
+        if (forest.skyIslands != null) {
+            Color islCol = Helpers.newColor(90, 140, 70, 255);
+            for (toyz.builder.terrain.SkyIslandGenerator.Island isl : forest.skyIslands) {
+                if (isl == null || isl.mesh == null || isl.mesh.meshCount() < 1) continue;
+                float dx = isl.cx - camPos.x(), dz = isl.cz - camPos.z();
+                if (dx * dx + dz * dz > (maxDist + isl.radius) * (maxDist + isl.radius)) continue;
+                DrawModel(isl.mesh, Helpers.newVector3(0, 0, 0), 1f, islCol);
             }
         }
 
@@ -1216,6 +1406,14 @@ public final class Terrain {
             float distSq = dx * dx + dz * dz;
             if (distSq > maxDistSq) continue;
             drawTree(forest, tree, distSq > lodFarSq);
+            // occasional fallen GLB log beside tree
+            if ((tree.colorVariant % 5) == 0 && (forest.logHorizOak != null || forest.logHorizPine != null)) {
+                float ang = tree.rotation + 35f;
+                float lx = tree.position.x() + (float)Math.cos(ang * 0.017453f) * tree.scale * 1.4f;
+                float lz = tree.position.z() + (float)Math.sin(ang * 0.017453f) * tree.scale * 1.4f;
+                drawHorizLog(forest, lx, tree.position.y(), lz, tree.scale * 0.85f, ang);
+            }
+
         }
 
         drawVegetation(forest, camPos, time);

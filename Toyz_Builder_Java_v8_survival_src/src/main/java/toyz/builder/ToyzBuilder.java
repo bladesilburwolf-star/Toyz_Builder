@@ -158,6 +158,8 @@ public final class ToyzBuilder {
                         Terrain.WorldType wt = Terrain.WorldType.values()[Math.max(0, Math.min(2, titleMenu.worldTypeIndex))];
                         placedPieces.clear();
                         selectedIndex = -1;
+                        Terrain.pendingMapgenPreset = titleMenu.mapgenPresetIndex;
+                        Terrain.pendingSkyIslands = titleMenu.skyIslands;
                         forest = Terrain.generateForestTerrain(seed, wt, titleMenu.structures);
                         mapSystem.createNewMap(String.format("World %d", seed & 0xFFFF), MapSystem.MapType.OUTDOOR);
                         MapSystem.Map m = mapSystem.getCurrentMap();
