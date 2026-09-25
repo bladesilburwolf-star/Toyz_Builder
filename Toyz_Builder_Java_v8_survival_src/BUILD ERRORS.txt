@@ -1,0 +1,31 @@
+PS C:\Users\jwgreer\Toyz_Builder_Java\v3\Toyz_Builder_Java> gradle run
+
+> Task :compileJava FAILED
+C:\Users\jwgreer\Toyz_Builder_Java\v3\Toyz_Builder_Java\src\main\java\toyz\builder\ToyzBuilder.java:465: error: cannot find symbol
+            Terrain.drawForestTerrain(forest, camera._position(), settings.treeDrawDistance, worldTime);
+                                                                                             ^
+  symbol:   variable worldTime
+  location: class ToyzBuilder
+1 error
+
+[Incubating] Problems report is available at: file:///C:/Users/jwgreer/Toyz_Builder_Java/v3/Toyz_Builder_Java/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileJava' (registered by plugin class 'org.gradle.api.plugins.JavaBasePlugin').
+> Compilation failed; see the compiler output below.
+  C:\Users\jwgreer\Toyz_Builder_Java\v3\Toyz_Builder_Java\src\main\java\toyz\builder\ToyzBuilder.java:465: error: cannot find symbol
+              Terrain.drawForestTerrain(forest, camera._position(), settings.treeDrawDistance, worldTime);
+                                                                                               ^
+    symbol:   variable worldTime
+    location: class ToyzBuilder
+  1 error
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+
+BUILD FAILED in 3s
+1 actionable task: 1 executed
+PS C:\Users\jwgreer\Toyz_Builder_Java\v3\Toyz_Builder_Java>

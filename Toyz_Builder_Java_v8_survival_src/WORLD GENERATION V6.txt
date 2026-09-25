@@ -1,0 +1,22 @@
+Toyz Builder Java — World Generation / Structures V6
+
+World creation now has a second menu after NEW WORLD:
+- FLAT: low-relief builder-friendly terrain.
+- REGULAR: the full V5 biome/landform generator.
+- AMPLIFIED: exaggerated macro terrain and ridge relief.
+- STRUCTURES / NO STRUCTURES toggle.
+- Advanced deterministic seed entry: numeric seeds are exact; text seeds use Java string hashing; RANDOM creates a new seed.
+
+Procedural architecture is generated into the new map as normal PlacedPiece data, so structures can be edited, saved, loaded, or replaced by player construction.
+
+Structure tuning lives in MapSystem.StructureSettings:
+- globalScale
+- maxStructures
+- minSpacing
+- villageChance
+- houseScaleMin / houseScaleMax
+- wallLevels
+- includeRoofs
+- includeDoorsWindows
+
+Current generated forms use the new plank, half-log/stub, roof, door and window pieces. Architecture remains deliberately separate from natural terrain features.
