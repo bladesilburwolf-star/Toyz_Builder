@@ -29,6 +29,7 @@ public final class Terrain {
     public static final int BIOME_HIGHLANDS = 16, BIOME_FLOWER_MEADOW = 17, BIOME_DRY_FOREST = 18;
     public static final int BIOME_FROZEN_LAKE = 19;
     public static final int BIOME_DARK_FOREST = 20, BIOME_REDWOOD = 21, BIOME_BAMBOO = 22, BIOME_EVERGREEN = 23;
+    private static final int MAT_GRASS = 0, MAT_SAND = 1, MAT_ROCK = 2, MAT_DIRT = 3, MAT_SNOW = 4;
 
     public static final String[] BIOME_NAMES = {
         "Snowy Peaks", "Taiga", "Temperate Forest", "Meadow", "Autumn Woods",
@@ -204,6 +205,9 @@ public final class Terrain {
         public float size = 400f;
         public float cellSize = 4.0f;
         public float heightScale = 16f;
+        /** Phase B chunk streaming */
+        public boolean useChunks = false;
+        public toyz.builder.terrain.ChunkSystem.Manager chunks;
         public float waterLevel = 0f;
         public int seed = 0xC0FFEE;
         public WorldType worldType = WorldType.NORMAL;
@@ -769,10 +773,24 @@ public final class Terrain {
         } else if (forest.worldType == WorldType.INDUSTRIAL) {
             forest.size = 160f;
             forest.heightScale = 10f;
+            forest.magnetix = true;
+        } else {
+            // Phase B overworld — large continuous world, chunked mesh
+            forest.size = toyz.builder.terrain.ChunkSystem.settings.worldHalfSize * 2f;
+            forest.heightScale = 16f;
+            forest.useChunks = true;
         }
-        forest.size = 640f;
-        forest.cellSize = 4.0f;
-        forest.heightScale = 16f;
+        // Dimension overrides keep small size / no chunks
+        if (forest.worldType == WorldType.INDOOR || forest.worldType == WorldType.CAVE
+                || forest.worldType == WorldType.NETHER || forest.worldType == WorldType.SKY
+                || forest.worldType == WorldType.CORAL || forest.worldType == WorldType.INDUSTRIAL
+                || forest.worldType == WorldType.FOREST || forest.worldType == WorldType.DESERT) {
+            forest.useChunks = false;
+        }
+        if (forest.worldType == WorldType.FOREST) { forest.size = 640f; forest.heightScale = 16f; }
+        if (forest.worldType == WorldType.DESERT) { forest.size = 640f; forest.heightScale = 12f; }
+        forest.cellSize = toyz.builder.terrain.ChunkSystem.settings.cellSize;
+        if (!forest.useChunks && forest.size < 100f) forest.cellSize = 4.0f;
         forest.waterLevel = forest.heightScale * WATER_LEVEL_FRAC;
 
         // ---- Terrain V2 (continuous landforms / biomes / rivers / structure sites) ----
@@ -780,6 +798,7 @@ public final class Terrain {
             toyz.builder.terrain.WorldConfig v2cfg =
                 toyz.builder.terrain.WorldConfig.fromLegacy(seed, forest.worldType, structuresEnabled);
             v2cfg.size = forest.size;
+            if (forest.useChunks) v2cfg.streamMeshes = true;
             v2cfg.heightScale = forest.heightScale;
             v2cfg.sampleSpacing = forest.cellSize;
             v2cfg.meshSpacing = forest.cellSize;
@@ -833,6 +852,58 @@ public final class Terrain {
             t.printStackTrace();
             forest.v2 = null;
             activeV2 = null;
+        }
+
+
+        // ---- Phase B: chunked world (large extent, stream meshes) ----
+        if (forest.useChunks) {
+            forest.chunks = new toyz.builder.terrain.ChunkSystem.Manager();
+            forest.chunks.cfg = toyz.builder.terrain.ChunkSystem.settings;
+            // Avoid one giant water mesh for 6k world
+            forest.waterOceanMesh = null;
+            forest.waterRiverMesh = null;
+            forest.waterFrozenMesh = null;
+            forest.terrainModel = null;
+            forest.terrainGrass = forest.terrainSand = forest.terrainRock = null;
+            forest.terrainDirt = forest.terrainSnow = null;
+            // Load prop models still needed for trees
+            loadTreeModels(forest);
+            // Emerge spawn neighborhood immediately (blocking first frame)
+            // Boot: load only a tight neighborhood (avoid long hitch / OOM)
+            int savedGen = forest.chunks.cfg.generateChunks;
+            int savedRen = forest.chunks.cfg.renderChunks;
+            forest.chunks.cfg.generateChunks = Math.min(3, savedGen);
+            forest.chunks.cfg.renderChunks = Math.min(3, savedRen);
+            forest.chunks.emergeBudgetPerFrame = 24;
+            toyz.builder.terrain.ChunkSystem.MeshBuilder builder = ch -> {
+                try {
+                    buildChunkMeshes(forest, ch);
+                } catch (Throwable ex) {
+                    System.err.println("[Chunk] mesh fail " + ch.coord + ": " + ex.getMessage());
+                }
+            };
+            try {
+                forest.chunks.update(0f, 0f, builder);
+            } catch (Throwable ex) {
+                System.err.println("[Chunk] emerge fail: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+            forest.chunks.cfg.generateChunks = savedGen;
+            forest.chunks.cfg.renderChunks = savedRen;
+            forest.chunks.emergeBudgetPerFrame = 2;
+            // Trees for loaded chunks only
+            for (toyz.builder.terrain.ChunkSystem.Chunk ch : forest.chunks.loaded.values()) {
+                try {
+                    populateChunkDecor(forest, ch, seed);
+                } catch (Throwable ex) {
+                    System.err.println("[Chunk] decor fail " + ch.coord + ": " + ex.getMessage());
+                }
+            }
+            System.out.println("[Terrain] Phase B chunks half=" + (forest.size * 0.5f)
+                    + " chunk=" + forest.chunks.cfg.chunkSize
+                    + " loaded=" + forest.chunks.loadedCount()
+                    + " render=" + forest.chunks.cfg.renderChunks);
+            return forest;
         }
 
         int cells = (int) (forest.size / forest.cellSize);
@@ -959,7 +1030,7 @@ public final class Terrain {
         }
 
         // ---- Multi-material terrain: sand / rock / dirt / snow / grass (real textures) ----
-        final int MAT_GRASS = 0, MAT_SAND = 1, MAT_ROCK = 2, MAT_DIRT = 3, MAT_SNOW = 4;
+        // mat ids use class MAT_*
         java.util.List<short[]>[] matTris = new java.util.ArrayList[5];
         for (int m = 0; m < 5; m++) matTris[m] = new java.util.ArrayList<>();
 
@@ -1903,10 +1974,22 @@ public final class Terrain {
         if (forest.terrainSand != null) { DrawModel(forest.terrainSand, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
         if (forest.terrainRock != null) { DrawModel(forest.terrainRock, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
         if (forest.terrainDirt != null) { DrawModel(forest.terrainDirt, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
-        if (forest.terrainSnow != null) { DrawModel(forest.terrainSnow, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
-        if (forest.terrainGrass != null) { DrawModel(forest.terrainGrass, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
-        if (!anyLayer && forest.terrainModel != null)
-            DrawModel(forest.terrainModel, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+        if (forest.useChunks && forest.chunks != null) {
+            for (toyz.builder.terrain.ChunkSystem.Chunk ch : forest.chunks.loaded.values()) {
+                if (!forest.chunks.inRenderRange(ch.coord)) continue;
+                if (ch.snow != null) DrawModel(ch.snow, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+                if (ch.sand != null) DrawModel(ch.sand, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+                if (ch.rock != null) DrawModel(ch.rock, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+                if (ch.dirt != null) DrawModel(ch.dirt, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+                if (ch.grass != null) DrawModel(ch.grass, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+                anyLayer = true;
+            }
+        } else {
+            if (forest.terrainSnow != null) { DrawModel(forest.terrainSnow, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+            if (forest.terrainGrass != null) { DrawModel(forest.terrainGrass, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
+            if (!anyLayer && forest.terrainModel != null)
+                DrawModel(forest.terrainModel, Helpers.newVector3(0, 0, 0), 1f, WHITE);
+        }
 
 
         float maxDistSq = maxDist * maxDist;
@@ -2199,7 +2282,178 @@ public final class Terrain {
         return position;
     }
 
-    static float clamp(float v, float mn, float mx) {
+        static float clamp(float v, float mn, float mx) {
         return v < mn ? mn : (v > mx ? mx : v);
+    }
+
+    private static void loadTreeModels(ForestTerrain forest) {
+        if (forest.leafBlockModel != null) return;
+        forest.logVertOak = tryLoadGlb("assets/models/oaklogv.glb");
+        forest.logVertPine = tryLoadGlb("assets/models/pinelogv.glb");
+        forest.logVertBirch = tryLoadGlb("assets/models/birchlogv.glb");
+        forest.logVertJungle = tryLoadGlb("assets/models/mahoganylogv.glb");
+        forest.logVertRedwood = tryLoadGlb("assets/models/redwoodlog_v.glb");
+        forest.logVertBamboo = tryLoadGlb("assets/models/bamboo_v.glb");
+        forest.logVertDarkOak = tryLoadGlb("assets/models/darkoaklog_v.glb");
+        forest.logHorizOak = tryLoadGlb("assets/models/oaklogh.glb");
+        forest.logHorizPine = tryLoadGlb("assets/models/pinelogh.glb");
+        forest.logHorizBirch = tryLoadGlb("assets/models/birchlogh.glb");
+        forest.logHorizRedwood = tryLoadGlb("assets/models/redwoodlog_h.glb");
+        forest.logHorizBamboo = tryLoadGlb("assets/models/bamboo_h.glb");
+        forest.trunkModel = forest.logVertOak != null ? forest.logVertOak
+                : LoadModelFromMesh(GenMeshCylinder(0.32f, 1.0f, 8));
+        forest.trunkFatModel = forest.logVertJungle != null ? forest.logVertJungle
+                : (forest.logVertOak != null ? forest.logVertOak
+                : LoadModelFromMesh(GenMeshCylinder(0.42f, 1.0f, 8)));
+        forest.leafBlockModel = LoadModelFromMesh(GenMeshCube(1.0f, 1.0f, 1.0f));
+        forest.leafBlockSmallModel = LoadModelFromMesh(GenMeshCube(0.55f, 0.55f, 0.55f));
+        forest.spruceBlockModel = LoadModelFromMesh(GenMeshCone(0.55f, 1.0f, 4));
+        forest.cactusBlockModel = LoadModelFromMesh(GenMeshCube(0.55f, 1.0f, 0.55f));
+        forest.rockBlockModel = LoadModelFromMesh(GenMeshCube(1f, 1f, 1f));
+    }
+
+    public static void buildChunkMeshes(ForestTerrain forest,
+                                        toyz.builder.terrain.ChunkSystem.Chunk ch) {
+        float cs = forest.chunks.cfg.chunkSize;
+        float cell = forest.chunks.cfg.cellSize;
+        float minX = toyz.builder.terrain.ChunkSystem.chunkMinX(ch.coord.cx, cs);
+        float minZ = toyz.builder.terrain.ChunkSystem.chunkMinZ(ch.coord.cz, cs);
+        int cells = Math.max(4, (int) (cs / cell));
+        float actualCell = cs / cells;
+        int vertsPerSide = cells + 1;
+        int vertexCount = vertsPerSide * vertsPerSide;
+
+        FloatPointer vertices = new FloatPointer(vertexCount * 3);
+        FloatPointer normals = new FloatPointer(vertexCount * 3);
+        FloatPointer texcoords = new FloatPointer(vertexCount * 2);
+        BytePointer colors = new BytePointer(vertexCount * 4);
+        int[] biomeIds = new int[vertexCount];
+        @SuppressWarnings("unchecked")
+        java.util.List<short[]>[] matTris = new java.util.ArrayList[5];
+        for (int i = 0; i < 5; i++) matTris[i] = new java.util.ArrayList<>();
+
+        for (int z = 0; z < vertsPerSide; z++) {
+            for (int x = 0; x < vertsPerSide; x++) {
+                int i = z * vertsPerSide + x;
+                float worldX = minX + x * actualCell;
+                float worldZ = minZ + z * actualCell;
+                float y = getTerrainHeight(forest, worldX, worldZ);
+                vertices.put(i * 3, worldX).put(i * 3 + 1, y).put(i * 3 + 2, worldZ);
+                texcoords.put(i * 2, x * 0.5f).put(i * 2 + 1, z * 0.5f);
+                float eps = actualCell;
+                float hL = getTerrainHeight(forest, worldX - eps, worldZ);
+                float hR = getTerrainHeight(forest, worldX + eps, worldZ);
+                float hD = getTerrainHeight(forest, worldX, worldZ - eps);
+                float hU = getTerrainHeight(forest, worldX, worldZ + eps);
+                float nx = hL - hR, ny = 2f * eps, nz = hD - hU;
+                float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+                if (len > 1e-4f) { nx /= len; ny /= len; nz /= len; }
+                normals.put(i * 3, nx).put(i * 3 + 1, ny).put(i * 3 + 2, nz);
+                int biome = biomeAt(forest, worldX, worldZ);
+                if (biome < 0) biome = 0;
+                if (biome >= BIOME_GRASS.length) biome = BIOME_FOREST;
+                biomeIds[i] = biome;
+                int[] g = BIOME_GRASS[biome];
+                colors.put(i * 4, (byte) g[0]).put(i * 4 + 1, (byte) g[1])
+                      .put(i * 4 + 2, (byte) g[2]).put(i * 4 + 3, (byte) 255);
+            }
+        }
+        for (int z = 0; z < cells; z++) {
+            for (int x = 0; x < cells; x++) {
+                int i0 = z * vertsPerSide + x;
+                int i1 = i0 + 1, i2 = i0 + vertsPerSide, i3 = i2 + 1;
+                int mat = materialForBiome(biomeIds[i0]);
+                matTris[mat].add(new short[]{(short) i0, (short) i2, (short) i1});
+                matTris[mat].add(new short[]{(short) i1, (short) i2, (short) i3});
+            }
+        }
+        Texture grassTex = loadTerrainTex("assets/textures/grass/grass1.png", "assets/textures/grass1.png");
+        Texture sandTex = loadTerrainTex("assets/textures/sand/sand1.png", "assets/textures/sand/sand2.png");
+        Texture rockTexT = loadTerrainTex("assets/textures/rocks/rock1.png", "assets/textures/stone/stone1.png");
+        Texture dirtTex = loadTerrainTex("assets/textures/dirt/dirt1.png", "assets/textures/rocks/rock3.png");
+        Texture snowTex = loadTerrainTex("assets/textures/snow/snow.png", "assets/textures/ice/ice.jpg");
+        ch.grass = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_GRASS]);
+        ch.sand  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_SAND]);
+        ch.rock  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_ROCK]);
+        ch.dirt  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_DIRT]);
+        ch.snow  = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_SNOW]);
+        assignTerrainTexture(ch.grass, grassTex);
+        assignTerrainTexture(ch.sand, sandTex != null ? sandTex : grassTex);
+        assignTerrainTexture(ch.rock, rockTexT != null ? rockTexT : grassTex);
+        assignTerrainTexture(ch.dirt, dirtTex != null ? dirtTex : grassTex);
+        assignTerrainTexture(ch.snow, snowTex != null ? snowTex : grassTex);
+    }
+
+    private static int materialForBiome(int biome) {
+        if (biome == BIOME_DESERT || biome == BIOME_BEACH || biome == BIOME_SAVANNA
+                || biome == BIOME_BADLANDS || biome == BIOME_MESA) return MAT_SAND;
+        if (biome == BIOME_SNOW || biome == BIOME_FROZEN_LAKE || biome == BIOME_ALPINE) return MAT_SNOW;
+        if (biome == BIOME_HIGHLANDS || biome == BIOME_VOLCANO) return MAT_ROCK;
+        if (biome == BIOME_SWAMP || biome == BIOME_DRY_FOREST) return MAT_DIRT;
+        return MAT_GRASS;
+    }
+
+    public static void populateChunkDecor(ForestTerrain forest,
+                                          toyz.builder.terrain.ChunkSystem.Chunk ch, int seed) {
+        if (ch.localTrees.size() > 0) return; // already decorated
+        float cs = forest.chunks.cfg.chunkSize;
+        float minX = toyz.builder.terrain.ChunkSystem.chunkMinX(ch.coord.cx, cs);
+        float minZ = toyz.builder.terrain.ChunkSystem.chunkMinZ(ch.coord.cz, cs);
+        float spacing = 6.5f;
+        int localSeed = seed ^ (ch.coord.cx * 374761393) ^ (ch.coord.cz * 668265263);
+        for (float zPos = minZ + 2f; zPos < minZ + cs - 2f; zPos += spacing) {
+            for (float xPos = minX + 2f; xPos < minX + cs - 2f; xPos += spacing) {
+                float jx = xPos + (hash2D((int)xPos, (int)zPos, localSeed) - 0.5f) * spacing * 0.6f;
+                float jz = zPos + (hash2D((int)zPos, (int)xPos, localSeed + 7) - 0.5f) * spacing * 0.6f;
+                int biome = biomeAt(forest, jx, jz);
+                if (biome < 0 || biome >= BIOME_DENSITY.length) continue;
+                if (BIOME_DENSITY[biome] <= 0) continue;
+                float y = getTerrainHeight(forest, jx, jz);
+                if (y < forest.waterLevel + 0.6f) continue;
+                float density = hash2D((int)(jx * 3), (int)(jz * 3), localSeed + 99);
+                if (density > BIOME_DENSITY[biome] / 100f) continue;
+                int[] kinds = BIOME_TREES[biome];
+                if (kinds == null || kinds.length == 0) continue;
+                ForestTree tree = new ForestTree();
+                tree.position = Helpers.newVector3(jx, y, jz);
+                tree.biome = biome;
+                tree.biomeType = kinds[(int)(hash2D((int)jx, (int)jz, localSeed + 3) * kinds.length) % kinds.length];
+                tree.colorVariant = (int)(hash2D((int)jz, (int)jx, localSeed + 5) * 8) & 7;
+                tree.rotation = hash2D((int)jx, (int)jz, localSeed + 11) * 360f;
+                float sizeRoll = hash2D((int)jx, (int)jz, localSeed + 13);
+                switch (tree.biomeType) {
+                    case 1: tree.scale = 0.9f + sizeRoll * 0.7f; break;
+                    case 6: tree.scale = 1.2f + sizeRoll * 1.0f; break;
+                    case 7: tree.scale = 1.8f + sizeRoll * 1.4f; break;
+                    case 8: tree.scale = 0.9f + sizeRoll * 0.8f; break;
+                    case 9: tree.scale = 1.0f + sizeRoll * 0.9f; break;
+                    default: tree.scale = 0.85f + sizeRoll * 0.7f; break;
+                }
+                forest.trees.add(tree);
+                ch.localTrees.add(tree);
+            }
+        }
+    }
+
+    public static void updateChunks(ForestTerrain forest, float playerX, float playerZ) {
+        if (forest == null || !forest.useChunks || forest.chunks == null) return;
+        toyz.builder.terrain.ChunkSystem.MeshBuilder builder = ch -> {
+            try {
+                buildChunkMeshes(forest, ch);
+                populateChunkDecor(forest, ch, forest.seed);
+            } catch (Throwable ex) {
+                System.err.println("[Chunk] update fail " + ch.coord + ": " + ex.getMessage());
+            }
+        };
+        int before = forest.chunks.loadedCount();
+        forest.chunks.update(playerX, playerZ, builder);
+        if (forest.chunks.loadedCount() != before) {
+            forest.trees.clear();
+            for (toyz.builder.terrain.ChunkSystem.Chunk ch : forest.chunks.loaded.values()) {
+                for (Object o : ch.localTrees) {
+                    if (o instanceof ForestTree) forest.trees.add((ForestTree) o);
+                }
+            }
+        }
     }
 }

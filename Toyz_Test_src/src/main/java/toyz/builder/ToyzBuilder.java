@@ -14,8 +14,9 @@ public final class ToyzBuilder {
     static final float GRID_SIZE = 0.5f; // fine stud grid (Mega-Block scale, not 16/32)
     static final float SNAP_RADIUS = 0.65f; // magnetic snap mode
 
-    // Options / control settings (editable from the Options menu)
+    // Options / control / OptiFine / mod / shader settings
     public static class GameSettings {
+        // Controls
         public float mouseSensitivity = 0.35f;
         public float gamepadLookSensitivity = 160f;
         public float arrowLookSpeed = 90f;
@@ -27,12 +28,72 @@ public final class ToyzBuilder {
         public float thirdPersonHeight = 1.8f;
         public int resolutionIndex = 0;
         public boolean fullscreen = false;
+
+        // Graphics (OptiFine-style)
         public int skyboxIndex = 0;
         public float brightness = 1f;
         public float ambient = 0.4f;
         public boolean fogEnabled = false;
-        public float fogDensity = 0.01f;
+        public float fogDensity = 0.008f;
+        public float fogStart = 0.35f;       // fraction of view range
         public float treeDrawDistance = 110f;
+        public int renderChunks = 4;         // Phase B default (raise in GRAPHICS)
+        public int activeChunks = 3;
+        public int generateChunks = 4;
+        public int graphicsQuality = 0;      // 0=Fast 1=Fancy 2=Fabulous — default Fast for older GPUs
+        public boolean smoothLighting = true;
+        public boolean clouds = true;
+        public boolean particles = true;
+        public boolean entityShadows = false;
+        public int maxFps = 60;              // 0 = unlimited
+        public float viewBobbing = 0.0f;
+
+        // Mods (enable/disable packs)
+        public boolean modSurvival = true;
+        public boolean modStructures = true;
+        public boolean modWeather = true;
+        public boolean modMobs = true;
+        public boolean modWarpPipes = true;
+        public boolean modNether = true;
+        public boolean modMagnetix = true;
+        public boolean modCrafting = true;
+
+        // Shaders (lightweight presets until GLSL)
+        public int shaderPreset = 0;         // 0=None 1=Technicolor 2=Vivid 3=SoftFog 4=Noir 5=Warm
+        public boolean shaderEnabled = false;
+
+        public static final String[] QUALITY_NAMES = { "FAST", "FANCY", "FABULOUS" };
+        public static final String[] SHADER_NAMES = {
+            "NONE", "TECHNICOLOR", "VIVID TONE", "SOFT FOG", "NOIR", "WARM GLOW"
+        };
+        public static final String[] MOD_NAMES = {
+            "Survival", "Structures", "Weather", "Mobs",
+            "Warp Pipes", "Nether", "Magnetix Zone", "Crafting"
+        };
+
+        /** Apply chunk distances into ChunkSystem.settings */
+        public void applyChunkSettings() {
+            try {
+                toyz.builder.terrain.ChunkSystem.Settings cs =
+                    toyz.builder.terrain.ChunkSystem.settings;
+                cs.renderChunks = Math.max(2, Math.min(12, renderChunks));
+                cs.activeChunks = Math.max(2, Math.min(renderChunks, activeChunks));
+                cs.generateChunks = Math.max(cs.activeChunks, Math.min(12, generateChunks));
+            } catch (Throwable ignored) {}
+        }
+
+        /** RGB tint multiplier from shader preset (1 = neutral). */
+        public float[] shaderTint() {
+            if (!shaderEnabled) return new float[]{1f, 1f, 1f};
+            switch (shaderPreset) {
+                case 1: return new float[]{1.15f, 1.05f, 0.95f}; // Technicolor
+                case 2: return new float[]{1.20f, 1.10f, 1.05f}; // Vivid
+                case 3: return new float[]{0.95f, 1.00f, 1.08f}; // Soft fog cool
+                case 4: return new float[]{0.75f, 0.75f, 0.80f}; // Noir
+                case 5: return new float[]{1.18f, 1.05f, 0.88f}; // Warm
+                default: return new float[]{1f, 1f, 1f};
+            }
+        }
     }
 
     private enum AppState { Title, Playing }
@@ -40,6 +101,7 @@ public final class ToyzBuilder {
 
     public static void main(String[] args) {
         GameSettings settings = new GameSettings();
+        settings.applyChunkSettings();
         UI.PauseMenuState pauseMenu = new UI.PauseMenuState();
         UI.TitleMenuState titleMenu = new UI.TitleMenuState();
         UI.MapLoaderState mapLoader = new UI.MapLoaderState();
@@ -47,6 +109,8 @@ public final class ToyzBuilder {
         String saveStatusMsg = "";
         float saveStatusTimer = 0f;
         boolean requestExit = false;
+        float chunkUpdateAccum = 0f;
+        int lastChunkCx = Integer.MIN_VALUE, lastChunkCz = Integer.MIN_VALUE;
 
         int[][] resolutions = { {1280, 800}, {1280, 720}, {1920, 1080}, {1600, 900} };
         String[] resolutionNames = { "1280x800", "1280x720", "1920x1080", "1600x900" };
@@ -63,7 +127,7 @@ public final class ToyzBuilder {
         InitWindow(1280, 800, "Toyz Builder Engine  —  Creative / Survival");
         SetExitKey(KEY_NULL);
         EnableCursor();
-        SetTargetFPS(60);
+        if (settings.maxFps > 0) SetTargetFPS(settings.maxFps); else SetTargetFPS(60);
 
         Camera3D camera = Helpers.newCamera(Helpers.newVector3(0, 0, 0), Helpers.newVector3(0, 0, 0),
                                             Helpers.newVector3(0, 1, 0), 70f, CAMERA_PERSPECTIVE);
@@ -127,9 +191,10 @@ public final class ToyzBuilder {
             if (saveStatusTimer > 0f) saveStatusTimer -= dt;
 			worldTime += dt;
             boolean hasController = IsGamepadAvailable(0);
-			Weather.update(dt, camera._position());
-			
-			if (IsKeyPressed(KEY_M)) Weather.cycle();
+			if (settings.modWeather) {
+				Weather.update(dt, camera._position());
+				if (IsKeyPressed(KEY_M)) Weather.cycle();
+			}
             if (IsKeyPressed(KEY_F11) || (IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER))) {
                 settings.fullscreen = !settings.fullscreen;
                 ToggleFullscreen();
@@ -187,9 +252,15 @@ public final class ToyzBuilder {
                     }
                 } else if (titleMenu.showSettings) {
                     int sw = GetScreenWidth(), sh = GetScreenHeight();
-                    Rectangle opt = Helpers.newRectangle(sw / 2f - 180, 80, 360, sh - 120);
+                    Rectangle opt = Helpers.newRectangle(sw / 2f - 210, 40, 420, sh - 80);
                     UI.OptionsRequest req = new UI.OptionsRequest();
-                    UI.drawOptionsPanel(opt, settings, skyboxNames, resolutionNames, req);
+                    req.scroll = pauseMenu.optionsScroll;
+                    UI.drawOptionsPanel(opt, settings, skyboxNames, resolutionNames, req, pauseMenu.optionsTab);
+                    pauseMenu.optionsScroll = req.scrollOut;
+                    if (req.requestTab >= 0) {
+                        pauseMenu.optionsTab = req.requestTab;
+                        pauseMenu.optionsScroll = 0f;
+                    }
                     if (req.requestApplyRes) {
                         SetWindowSize(resolutions[settings.resolutionIndex][0],
                                       resolutions[settings.resolutionIndex][1]);
@@ -197,6 +268,11 @@ public final class ToyzBuilder {
                     if (req.requestToggleFs) {
                         settings.fullscreen = !settings.fullscreen;
                         ToggleFullscreen();
+                    }
+                    if (req.requestApplyGraphics) {
+                        settings.applyChunkSettings();
+                        if (settings.maxFps > 0) SetTargetFPS(settings.maxFps);
+                        else SetTargetFPS(0);
                     }
                     if (IsKeyPressed(KEY_ESCAPE)) titleMenu.showSettings = false;
                     if (UI.drawSteelButton(
@@ -484,6 +560,18 @@ public final class ToyzBuilder {
 
             // --- Movement (MCCE-style, relative to camYaw) ---
             if (!menuOpen) {
+                chunkUpdateAccum += dt;
+                boolean crossChunk = false;
+                if (forest != null && forest.useChunks && forest.chunks != null) {
+                    var pc = toyz.builder.terrain.ChunkSystem.worldToChunk(
+                        player.position.x(), player.position.z(), forest.chunks.cfg.chunkSize);
+                    crossChunk = (pc.cx != lastChunkCx || pc.cz != lastChunkCz);
+                    if (crossChunk) { lastChunkCx = pc.cx; lastChunkCz = pc.cz; }
+                }
+                if (crossChunk || chunkUpdateAccum >= 0.35f) {
+                    chunkUpdateAccum = 0f;
+                    Terrain.updateChunks(forest, player.position.x(), player.position.z());
+                }
                 Player.update(player, forest, placedPieces, pieceDefs, dt, hasController, 0,
               camYaw, !Survival.showCraft && !mapLoader.open);
                 // Loading zones — cooldown prevents instant bounce-back
@@ -867,11 +955,11 @@ public final class ToyzBuilder {
             }
 
             Terrain.drawForestTerrain(forest, camera._position(), settings.treeDrawDistance, worldTime);
-			Weather.draw(camera._position());
+			if (settings.modWeather) Weather.draw(camera._position());
 			
             if (settings.thirdPerson) Player.draw(player);
             for (Piece.PlacedPiece p : placedPieces) Piece.drawPlacedPiece(p, pieceDefs);
-            if (Survival.enabled) Survival.drawWorld(camera);
+            if (Survival.enabled && settings.modSurvival) Survival.drawWorld(camera);
             if (isPlacing && haveGhostPos) {
                 Piece.PieceDef def = Piece.findDef(pieceDefs, placingType, placingColor);
                 Color ghostCol = ghostStacked
@@ -909,7 +997,18 @@ public final class ToyzBuilder {
                               placedPieces.size(), hasController, GetFPS());
             }
 			
-			DrawText("WEATHER: " + Weather.name(), 12, 106, 14, UI.white());
+			// Shader grade only when enabled (no full-screen fog wash — was killing fill-rate)
+            if (settings.shaderEnabled && settings.shaderPreset > 0) {
+                float[] tint = settings.shaderTint();
+                int a = settings.shaderPreset == 4 ? 55 : 22;
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
+                    Helpers.newColor((int)(tint[0]*40), (int)(tint[1]*40), (int)(tint[2]*40), a));
+            }
+			if (settings.modWeather)
+                DrawText("WEATHER: " + Weather.name(), 12, 106, 14, UI.white());
+            else
+                DrawText("WEATHER: OFF", 12, 106, 14, UI.phosphorDim());
+
             // Biome name — top center (Minetest-style location label)
             {
                 String bname = Terrain.biomeNameAt(forest, player.position.x(), player.position.z());
@@ -981,9 +1080,16 @@ public final class ToyzBuilder {
 
                 if (pauseMenu.showOptionsPanel) {
                     int sw = GetScreenWidth(), sh = GetScreenHeight();
-                    Rectangle opt = Helpers.newRectangle(sw * 0.5f + 20f, sh * 0.5f - 280f, 340f, 560f);
+                    // Wider panel for tabbed settings
+                    Rectangle opt = Helpers.newRectangle(sw * 0.5f + 10f, sh * 0.5f - 300f, 400f, 600f);
                     UI.OptionsRequest req = new UI.OptionsRequest();
-                    UI.drawOptionsPanel(opt, settings, skyboxNames, resolutionNames, req);
+                    req.scroll = pauseMenu.optionsScroll;
+                    UI.drawOptionsPanel(opt, settings, skyboxNames, resolutionNames, req, pauseMenu.optionsTab);
+                    pauseMenu.optionsScroll = req.scrollOut;
+                    if (req.requestTab >= 0) {
+                        pauseMenu.optionsTab = req.requestTab;
+                        pauseMenu.optionsScroll = 0f;
+                    }
                     if (req.requestApplyRes) {
                         SetWindowSize(resolutions[settings.resolutionIndex][0],
                                       resolutions[settings.resolutionIndex][1]);
@@ -991,6 +1097,26 @@ public final class ToyzBuilder {
                     if (req.requestToggleFs) {
                         settings.fullscreen = !settings.fullscreen;
                         ToggleFullscreen();
+                    }
+                    if (req.requestApplyGraphics) {
+                        // Quality presets
+                        if (settings.graphicsQuality == 0) { // Fast
+                            settings.treeDrawDistance = Math.min(settings.treeDrawDistance, 90f);
+                            settings.particles = false;
+                            settings.clouds = false;
+                            settings.entityShadows = false;
+                        } else if (settings.graphicsQuality == 2) { // Fabulous
+                            settings.treeDrawDistance = Math.max(settings.treeDrawDistance, 220f);
+                            settings.particles = true;
+                            settings.clouds = true;
+                        }
+                        settings.applyChunkSettings();
+                        if (settings.maxFps > 0) SetTargetFPS(settings.maxFps);
+                        else SetTargetFPS(0);
+                        if (settings.shaderEnabled && settings.shaderPreset == 3) {
+                            settings.fogEnabled = true;
+                            settings.fogDensity = Math.max(settings.fogDensity, 0.018f);
+                        }
                     }
                 }
             }

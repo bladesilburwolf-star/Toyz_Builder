@@ -91,18 +91,26 @@ public final class TerrainGenerator {
         w.bridgeSites = LandmarkPlacement.findBridgeCrossings(w, cfg.structures ? 8 : 0);
         w.caveMouths = CaveGenerator.findMouths(w, cfg.preset.ordinal() >= WorldConfig.MapgenPreset.V5.ordinal() ? 20 : 8);
 
-        try {
-            w.mesh = TerrainMeshBuilder.build(w);
-        } catch (Throwable t) {
-            System.err.println("[TerrainV3] land mesh failed: " + t.getMessage());
+        // Phase B / large worlds: never build one giant mesh (OOM / crash)
+        boolean skipFullMesh = cfg.streamMeshes || cfg.size > 900f;
+        if (skipFullMesh) {
             w.mesh = null;
-        }
-        try {
-            w.waterMeshes = WaterMeshBuilder.build(w);
-        } catch (Throwable t) {
-            System.err.println("[TerrainV3] water mesh failed: " + t.getMessage());
-            t.printStackTrace();
             w.waterMeshes = null;
+            System.out.println("[TerrainV3] streamMeshes — skip full land/water mesh size=" + cfg.size);
+        } else {
+            try {
+                w.mesh = TerrainMeshBuilder.build(w);
+            } catch (Throwable t) {
+                System.err.println("[TerrainV3] land mesh failed: " + t.getMessage());
+                w.mesh = null;
+            }
+            try {
+                w.waterMeshes = WaterMeshBuilder.build(w);
+            } catch (Throwable t) {
+                System.err.println("[TerrainV3] water mesh failed: " + t.getMessage());
+                t.printStackTrace();
+                w.waterMeshes = null;
+            }
         }
         try {
             w.skyIslands = SkyIslandGenerator.generate(cfg);

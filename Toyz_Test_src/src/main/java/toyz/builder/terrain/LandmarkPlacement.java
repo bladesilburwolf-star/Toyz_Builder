@@ -14,10 +14,13 @@ public final class LandmarkPlacement {
 
         WorldConfig cfg = world.config;
         float step = Math.max(cfg.sampleSpacing * 4f, 20f);
+        // Cap scan extent so Phase B (size 6000+) does not stall map create
+        float scanHalf = Math.min(cfg.size * 0.4f, cfg.streamMeshes ? 480f : 800f);
+        if (cfg.streamMeshes) step = Math.max(step, 32f);
         List<StructureSite> candidates = new ArrayList<>();
 
-        for (float z = -cfg.size * 0.4f; z <= cfg.size * 0.4f; z += step) {
-            for (float x = -cfg.size * 0.4f; x <= cfg.size * 0.4f; x += step) {
+        for (float z = -scanHalf; z <= scanHalf; z += step) {
+            for (float x = -scanHalf; x <= scanHalf; x += step) {
                 TerrainSample s = world.sample(x, z);
                 if (s.inWater || s.riverChannel) continue;
                 if (s.structureScore < 0.45f) continue;

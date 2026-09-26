@@ -21,6 +21,10 @@ public final class UI {
         public boolean open = false;
         public boolean showOptionsPanel = false;
         public int selected = 0;
+        /** 0=Controls 1=Graphics 2=Mods 3=Shaders */
+        public int optionsTab = 0;
+        /** Scroll offset for settings content (pixels). */
+        public float optionsScroll = 0f;
     }
 
     public static class TitleMenuState {
@@ -312,63 +316,190 @@ public final class UI {
     public static class OptionsRequest {
         public boolean requestApplyRes = false;
         public boolean requestToggleFs = false;
+        public boolean requestApplyGraphics = false;
+        public int requestTab = -1;
+        public float scroll = 0f;       // in
+        public float scrollOut = 0f;    // out (clamped)
+        public float contentHeight = 0f;
     }
 
     public static void drawOptionsPanel(Rectangle area, ToyzBuilder.GameSettings s,
-                                        List<String> skyNames, String[] resNames,
-                                        OptionsRequest req) {
+                                         List<String> skyNames, String[] resNames,
+                                         OptionsRequest req) {
+        drawOptionsPanel(area, s, skyNames, resNames, req, 0);
+    }
+
+    /** Tabbed settings: 0=Controls 1=Graphics(OptiFine) 2=Mods 3=Shaders — scrollable */
+    public static void drawOptionsPanel(Rectangle area, ToyzBuilder.GameSettings s,
+                                         List<String> skyNames, String[] resNames,
+                                         OptionsRequest req, int tab) {
         drawSteelPanel(area, "SETTINGS");
+        float x = area.x() + 16f;
+        float tabY = area.y() + 42f;
+        float w = area.width() - 32f;
 
-        float x = area.x() + 16;
-        float y = area.y() + 36;
-        float w = area.width() - 32;
-
-        y = rowLabel("Mouse Sens", x, y);
-        y = slider(x, y, w, v -> s.mouseSensitivity = v, s.mouseSensitivity, 0.05f, 0.8f);
-        y = rowLabel("Gamepad Look", x, y);
-        y = slider(x, y, w, v -> s.gamepadLookSensitivity = v, s.gamepadLookSensitivity, 40f, 300f);
-        y = rowLabel("Arrow Look", x, y);
-        y = slider(x, y, w, v -> s.arrowLookSpeed = v, s.arrowLookSpeed, 30f, 180f);
-        y = toggle("Invert X", x, y, w, v -> s.invertX = v, s.invertX);
-        y = toggle("Invert Y", x, y, w, v -> s.invertY = v, s.invertY);
-        y = toggle("Third Person", x, y, w, v -> s.thirdPerson = v, s.thirdPerson);
-        if (s.thirdPerson) {
-            y = rowLabel("Cam Distance", x, y);
-            y = slider(x, y, w, v -> s.thirdPersonDistance = v, s.thirdPersonDistance, 2f, 14f);
-            y = rowLabel("Cam Height", x, y);
-            y = slider(x, y, w, v -> s.thirdPersonHeight = v, s.thirdPersonHeight, 0.5f, 5f);
-        }
-        y = rowLabel("Tree Draw Dist", x, y);
-        y = slider(x, y, w, v -> s.treeDrawDistance = v, s.treeDrawDistance, 40f, 200f);
-
-        y = rowLabel("Sky", x, y);
-        if (!skyNames.isEmpty()) {
-            Rectangle prev = Helpers.newRectangle(x, y, 36, 26);
-            Rectangle next = Helpers.newRectangle(x + w - 36, y, 36, 26);
-            Rectangle mid = Helpers.newRectangle(x + 40, y, w - 80, 26);
-            if (drawSteelButton(prev, "<", false))
-                s.skyboxIndex = (s.skyboxIndex - 1 + skyNames.size()) % skyNames.size();
-            drawSteelButton(mid, skyNames.get(s.skyboxIndex), false);
-            if (drawSteelButton(next, ">", false))
-                s.skyboxIndex = (s.skyboxIndex + 1) % skyNames.size();
-            y += 32;
+        String[] tabs = { "CONTROLS", "GRAPHICS", "MODS", "SHADERS" };
+        float tw = w / tabs.length;
+        for (int i = 0; i < tabs.length; i++) {
+            Rectangle tr = Helpers.newRectangle(x + i * tw, tabY, tw - 2f, 26);
+            if (drawSteelButton(tr, tabs[i], tab == i)) {
+                req.requestTab = i;
+                req.scrollOut = 0f; // reset scroll on tab change
+            }
         }
 
-        if (resNames != null && resNames.length > 0) {
-            y = rowLabel("Resolution", x, y);
-            Rectangle prev = Helpers.newRectangle(x, y, 36, 26);
-            Rectangle next = Helpers.newRectangle(x + w - 36, y, 36, 26);
-            Rectangle mid = Helpers.newRectangle(x + 40, y, w - 80, 26);
+        // Content region below tabs
+        float contentTop = tabY + 34f;
+        float contentH = area.y() + area.height() - contentTop - 12f;
+        float contentX = x;
+        float contentW = w - 10f; // room for scrollbar
+
+        // Mouse wheel when cursor over panel
+        Vector2 mouse = GetMousePosition();
+        if (CheckCollisionPointRec(mouse, area)) {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0f) req.scroll = req.scroll - wheel * 36f;
+        }
+
+        float scroll = Math.max(0f, req.scroll);
+        // Estimate content height per tab (fixed layout)
+        float needH = switch (tab) {
+            case 0 -> 420f;
+            case 1 -> 620f;
+            case 2 -> 360f;
+            case 3 -> 400f;
+            default -> 400f;
+        };
+        float maxScroll = Math.max(0f, needH - contentH);
+        if (scroll > maxScroll) scroll = maxScroll;
+        req.scrollOut = scroll;
+        req.contentHeight = needH;
+
+        BeginScissorMode((int) contentX, (int) contentTop, (int) contentW, (int) contentH);
+        float y = contentTop - scroll;
+
+        if (tab == 0) {
+            y = rowLabel("MOUSE SENS", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.mouseSensitivity = v, s.mouseSensitivity, 0.05f, 1.2f);
+            y = rowLabel("GAMEPAD LOOK", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.gamepadLookSensitivity = v, s.gamepadLookSensitivity, 40f, 320f);
+            y = rowLabel("ARROW LOOK", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.arrowLookSpeed = v, s.arrowLookSpeed, 20f, 180f);
+            y = toggle("INVERT X", contentX, y, contentW, v -> s.invertX = v, s.invertX);
+            y = toggle("INVERT Y", contentX, y, contentW, v -> s.invertY = v, s.invertY);
+            y = toggle("THIRD PERSON", contentX, y, contentW, v -> s.thirdPerson = v, s.thirdPerson);
+            y = rowLabel("CAM DISTANCE", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.thirdPersonDistance = v, s.thirdPersonDistance, 2f, 14f);
+            y = rowLabel("RESOLUTION", contentX, y);
+            Rectangle prev = Helpers.newRectangle(contentX, y, 40, 28);
+            Rectangle mid = Helpers.newRectangle(contentX + 44, y, contentW - 88, 28);
+            Rectangle next = Helpers.newRectangle(contentX + contentW - 40, y, 40, 28);
             if (drawSteelButton(prev, "<", false))
-                s.resolutionIndex = (s.resolutionIndex - 1 + resNames.length) % resNames.length;
-            drawSteelButton(mid, resNames[s.resolutionIndex], false);
+                s.resolutionIndex = (s.resolutionIndex + resNames.length - 1) % resNames.length;
+            drawSteelButton(mid, resNames[Math.max(0, Math.min(resNames.length - 1, s.resolutionIndex))], false);
             if (drawSteelButton(next, ">", false))
                 s.resolutionIndex = (s.resolutionIndex + 1) % resNames.length;
             y += 32;
-            Rectangle apply = Helpers.newRectangle(x, y, w * 0.48f, 28);
-            Rectangle fs = Helpers.newRectangle(x + w * 0.52f, y, w * 0.48f, 28);
+            Rectangle apply = Helpers.newRectangle(contentX, y, contentW * 0.48f, 28);
+            Rectangle fs = Helpers.newRectangle(contentX + contentW * 0.52f, y, contentW * 0.48f, 28);
             if (drawSteelButton(apply, "APPLY RES", false)) req.requestApplyRes = true;
             if (drawSteelButton(fs, "FULLSCREEN", false)) req.requestToggleFs = true;
+            y += 40;
+            DrawText("Mouse wheel scrolls this panel", (int) contentX, (int) y, 12, PHOSPHOR_DIM);
+        } else if (tab == 1) {
+            y = rowLabel("RENDER DIST (CHUNKS)", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.renderChunks = Math.round(v), s.renderChunks, 2f, 12f);
+            DrawText(String.format("%d (~%.0fu)", s.renderChunks, s.renderChunks * 64f),
+                     (int)(contentX + contentW - 110), (int)(y - 18), 14, PHOSPHOR);
+            y = rowLabel("ACTIVE DIST (CHUNKS)", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.activeChunks = Math.round(v), s.activeChunks, 2f, 10f);
+            y = rowLabel("TREE DRAW DIST", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.treeDrawDistance = v, s.treeDrawDistance, 40f, 400f);
+            y = rowLabel("BRIGHTNESS", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.brightness = v, s.brightness, 0.4f, 1.6f);
+            y = rowLabel("AMBIENT", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.ambient = v, s.ambient, 0.1f, 1.0f);
+            y = toggle("FOG", contentX, y, contentW, v -> s.fogEnabled = v, s.fogEnabled);
+            if (s.fogEnabled) {
+                y = rowLabel("FOG DENSITY", contentX, y);
+                y = slider(contentX, y, contentW, v -> s.fogDensity = v, s.fogDensity, 0.001f, 0.04f);
+                y = rowLabel("FOG START", contentX, y);
+                y = slider(contentX, y, contentW, v -> s.fogStart = v, s.fogStart, 0.1f, 0.9f);
+            }
+            y = rowLabel("QUALITY", contentX, y);
+            Rectangle qp = Helpers.newRectangle(contentX, y, 40, 28);
+            Rectangle qm = Helpers.newRectangle(contentX + 44, y, contentW - 88, 28);
+            Rectangle qn = Helpers.newRectangle(contentX + contentW - 40, y, 40, 28);
+            if (drawSteelButton(qp, "<", false))
+                s.graphicsQuality = (s.graphicsQuality + 2) % 3;
+            drawSteelButton(qm, ToyzBuilder.GameSettings.QUALITY_NAMES[s.graphicsQuality], false);
+            if (drawSteelButton(qn, ">", false))
+                s.graphicsQuality = (s.graphicsQuality + 1) % 3;
+            y += 32;
+            y = toggle("SMOOTH LIGHT", contentX, y, contentW, v -> s.smoothLighting = v, s.smoothLighting);
+            y = toggle("CLOUDS", contentX, y, contentW, v -> s.clouds = v, s.clouds);
+            y = toggle("PARTICLES", contentX, y, contentW, v -> s.particles = v, s.particles);
+            y = toggle("ENTITY SHADOWS", contentX, y, contentW, v -> s.entityShadows = v, s.entityShadows);
+            y = rowLabel("MAX FPS (0=UNCAPPED)", contentX, y);
+            y = slider(contentX, y, contentW, v -> s.maxFps = Math.round(v / 5f) * 5, s.maxFps, 0f, 240f);
+            y = rowLabel("SKYBOX", contentX, y);
+            Rectangle sp = Helpers.newRectangle(contentX, y, 40, 28);
+            Rectangle sm = Helpers.newRectangle(contentX + 44, y, contentW - 88, 28);
+            Rectangle sn = Helpers.newRectangle(contentX + contentW - 40, y, 40, 28);
+            if (drawSteelButton(sp, "<", false))
+                s.skyboxIndex = (s.skyboxIndex + skyNames.size() - 1) % skyNames.size();
+            drawSteelButton(sm, skyNames.get(s.skyboxIndex % skyNames.size()), false);
+            if (drawSteelButton(sn, ">", false))
+                s.skyboxIndex = (s.skyboxIndex + 1) % skyNames.size();
+            y += 36;
+            if (drawSteelButton(Helpers.newRectangle(contentX, y, contentW, 28), "APPLY CHUNK DIST", false))
+                req.requestApplyGraphics = true;
+            y += 36;
+            DrawText("Wheel = scroll  |  APPLY after render dist", (int) contentX, (int) y, 12, PHOSPHOR_DIM);
+        } else if (tab == 2) {
+            DrawText("Enable / disable feature packs", (int) contentX, (int) y, 14, PHOSPHOR_DIM);
+            y += 22;
+            y = toggle("SURVIVAL", contentX, y, contentW, v -> s.modSurvival = v, s.modSurvival);
+            y = toggle("STRUCTURES", contentX, y, contentW, v -> s.modStructures = v, s.modStructures);
+            y = toggle("WEATHER", contentX, y, contentW, v -> s.modWeather = v, s.modWeather);
+            y = toggle("MOBS", contentX, y, contentW, v -> s.modMobs = v, s.modMobs);
+            y = toggle("WARP PIPES", contentX, y, contentW, v -> s.modWarpPipes = v, s.modWarpPipes);
+            y = toggle("NETHER", contentX, y, contentW, v -> s.modNether = v, s.modNether);
+            y = toggle("MAGNETIX ZONE", contentX, y, contentW, v -> s.modMagnetix = v, s.modMagnetix);
+            y = toggle("CRAFTING", contentX, y, contentW, v -> s.modCrafting = v, s.modCrafting);
+            y += 12;
+            DrawText("Mods apply on next New World", (int) contentX, (int) y, 13, PHOSPHOR_DIM);
+            y += 18;
+            DrawText("or zone warp where relevant.", (int) contentX, (int) y, 13, PHOSPHOR_DIM);
+        } else if (tab == 3) {
+            y = toggle("SHADERS ENABLED", contentX, y, contentW, v -> s.shaderEnabled = v, s.shaderEnabled);
+            y += 6;
+            DrawText("Preset (tint until GLSL)", (int) contentX, (int) y, 13, PHOSPHOR_DIM);
+            y += 20;
+            for (int i = 0; i < ToyzBuilder.GameSettings.SHADER_NAMES.length; i++) {
+                Rectangle br = Helpers.newRectangle(contentX, y, contentW, 28);
+                boolean on = s.shaderPreset == i && s.shaderEnabled;
+                if (drawSteelButton(br, ToyzBuilder.GameSettings.SHADER_NAMES[i], on)) {
+                    s.shaderPreset = i;
+                    s.shaderEnabled = (i != 0);
+                    req.requestApplyGraphics = true;
+                }
+                y += 32;
+            }
+            y += 8;
+            DrawText("Keep OFF for best FPS on older GPUs", (int) contentX, (int) y, 12, PHOSPHOR_DIM);
+        }
+        EndScissorMode();
+
+        // Scrollbar track
+        if (maxScroll > 1f) {
+            float barX = area.x() + area.width() - 14f;
+            float barY = contentTop;
+            float barH = contentH;
+            DrawRectangle((int) barX, (int) barY, 8, (int) barH, Helpers.newColor(40, 44, 50, 255));
+            float thumbH = Math.max(24f, barH * (contentH / needH));
+            float thumbY = barY + (barH - thumbH) * (scroll / maxScroll);
+            DrawRectangle((int) barX, (int) thumbY, 8, (int) thumbH, PHOSPHOR_DIM);
         }
     }
 

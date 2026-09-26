@@ -23,6 +23,8 @@ public final class WorldConfig {
     public float size = 400f;
     public float sampleSpacing = 4f;
     public float heightScale = 16f;
+    /** When true, skip full-world land/water mesh (Phase B chunks). */
+    public boolean streamMeshes = false;
     public float meshSpacing = 4f;
     public float maxDepth = 24f;
 
