@@ -37,13 +37,13 @@ public final class Terrain {
     };
 
     private static final int[][] BIOME_GRASS = {
-        /*Snow*/{235,240,248}, /*Taiga*/{55,90,65}, /*Forest*/{48,115,45}, /*Meadow*/{95,155,70},
+        /*Snow*/{248,252,255}, /*Taiga*/{55,90,65}, /*Forest*/{48,115,45}, /*Meadow*/{95,155,70},
         /*Autumn*/{165,110,45}, /*Jungle*/{28,125,52}, /*Savanna*/{195,175,85},
-        /*Desert*/{228,200,130}, /*Swamp*/{55,80,48}, /*Volcano*/{70,55,50},
+        /*Desert*/{228,200,130}, /*Swamp*/{48,72,42}, /*Volcano*/{70,55,50},
         /*Birch*/{95,145,70}, /*Alpine*/{120,155,100}, /*Badlands*/{180,95,50},
         /*Mesa*/{210,120,55}, /*Mangrove*/{48,105,68}, /*Beach*/{235,215,160},
         /*Highlands*/{95,100,95}, /*Flower*/{110,175,90}, /*DryForest*/{145,135,65},
-        /*Frozen*/{185,210,220}
+        /*Frozen*/{230,242,250}
     };
 
     private static final float[] BIOME_HEIGHT_MOD = {
@@ -52,17 +52,22 @@ public final class Terrain {
     };
 
     private static final int[] BIOME_DENSITY = {
-        5,55,70,12,45,85,10,3,40,0,65,18,4,3,70,2,12,38,30,8
+        /*snow*/12, /*taiga*/62, /*forest*/78, /*meadow*/18, /*autumn*/50,
+        /*jungle*/88, /*savanna*/6, /*desert*/0, /*swamp*/58, /*volcano*/0,
+        /*birch*/68, /*alpine*/22, /*badlands*/1, /*mesa*/1, /*mangrove*/55,
+        /*beach*/0, /*highlands*/14, /*flower*/42, /*dry*/8, /*frozen*/4
     };
 
     // 0 oak, 1 spruce, 2 autumn oak, 3 bush, 4 acacia, 5 cactus, 6 jungle.
     private static final int[][] BIOME_TREES = {
-        {1},{1},{0,2},{0,3},{2},{6,0},{4},{5},{3,0},{},
-        {0,3},{1,0},{3},{4},{3,0},{},{1,0},{0,3},{4,0},{1}
+        /*snow*/{1}, /*taiga*/{1}, /*forest*/{0,2}, /*meadow*/{0,3}, /*autumn*/{2},
+        /*jungle*/{6,0}, /*savanna*/{4}, /*desert*/{}, /*swamp*/{3,0}, /*volcano*/{},
+        /*birch*/{0,3}, /*alpine*/{1}, /*badlands*/{}, /*mesa*/{}, /*mangrove*/{3,0},
+        /*beach*/{}, /*highlands*/{1,0}, /*flower*/{0,3}, /*dry*/{4}, /*frozen*/{1}
     };
 
     private static final int[] BIOME_VEG_DENSITY = {
-        2,15,55,90,30,70,45,2,65,0,70,75,4,4,80,5,12,100,35,2
+        4,18,55,90,30,70,20,0,75,0,70,40,2,2,70,1,12,100,15,2
     };
     private static final int[] BIOME_FLOWER_CHANCE = {
         0,5,25,55,20,35,15,0,30,0,30,70,0,0,45,5,5,80,10,0
@@ -389,14 +394,17 @@ public final class Terrain {
     }
 
     public static int biomeAt(ForestTerrain forest, float x, float z) {
+        if (forest != null && forest.v2 != null) {
+            try {
+                return biomeIdToLegacy(toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, x, z));
+            } catch (Throwable ignored) {}
+        }
         float nx = x / forest.size, nz = z / forest.size;
         float temp = temperatureAt(x, z, forest.size, forest.seed);
         float moist = moistureAt(x, z, forest.size, forest.seed);
         float volc = fractalNoise(nx * 1.6f + 61f, nz * 1.6f - 22f, forest.seed + 404);
         int b = biomeFromClimate(temp, moist, volc);
         float h = heightAt(x, z, forest.size, forest.heightScale, forest.seed);
-
-        // Elevation adds secondary alpine/highland regions; shorelines get their own biome.
         if (h <= forest.waterLevel + forest.heightScale * 0.10f) {
             if (temp < 0.28f) return BIOME_FROZEN_LAKE;
             if (b != BIOME_SWAMP && b != BIOME_MANGROVE) return BIOME_BEACH;
@@ -597,7 +605,7 @@ public final class Terrain {
         }
 
         int cells = (int) (forest.size / forest.cellSize);
-        cells = Math.min(cells, 160);
+        cells = Math.min(cells, 240); // smoother biome texture transitions
         forest.cellSize = forest.size / cells;
         int vertsPerSide = cells + 1;
         int vertexCount = vertsPerSide * vertsPerSide;
@@ -679,6 +687,14 @@ public final class Terrain {
                         int cb = (int) ((c.b() & 0xFF) * (1f - ms) + 25 * ms);
                         c = Helpers.newColor(cr, cg, cb, 255);
                     }
+                }
+                // Snow accumulation — push snow/tundra toward pure white
+                if (biome == BIOME_SNOW || biome == BIOME_FROZEN_LAKE) {
+                    float acc = 0.55f + 0.35f * fractalNoise(nxs * 4f, nzs * 4f, seed + 3300);
+                    int cr = (int) ((c.r() & 0xFF) * (1f - acc) + 255 * acc);
+                    int cg = (int) ((c.g() & 0xFF) * (1f - acc) + 255 * acc);
+                    int cb = (int) ((c.b() & 0xFF) * (1f - acc) + 255 * acc);
+                    c = Helpers.newColor(cr, cg, cb, 255);
                 }
                 colors.put(i * 4, (byte) clamp(c.r() & 0xFF, 0f, 255f));
                 colors.put(i * 4 + 1, (byte) clamp(c.g() & 0xFF, 0f, 255f));
@@ -828,30 +844,41 @@ public final class Terrain {
                 .color(Helpers.newColor(255, 90, 20, 255));
         }
 
-        // ---- trees ----
-        final float spacing = 11.0f;
+        // ---- trees (clustered by biome; none in desert/beach) ----
+        final float spacing = 9.0f;
         float treeArea = forest.size * 0.47f;
         for (float zPos = -treeArea; zPos <= treeArea; zPos += spacing) {
             for (float xPos = -treeArea; xPos <= treeArea; xPos += spacing) {
-                float jitterX = (hash2D((int) (xPos * 10), (int) (zPos * 10), seed) - 0.5f) * 4f;
-                float jitterZ = (hash2D((int) (zPos * 10), (int) (xPos * 10), seed + 77) - 0.5f) * 4f;
+                float jitterX = (hash2D((int) (xPos * 10), (int) (zPos * 10), seed) - 0.5f) * 5f;
+                float jitterZ = (hash2D((int) (zPos * 10), (int) (xPos * 10), seed + 77) - 0.5f) * 5f;
                 float px = xPos + jitterX;
                 float pz = zPos + jitterZ;
                 if (px * px + pz * pz < 20f * 20f) continue; // spawn bowl
                 if (riverInfluence(px / forest.size, pz / forest.size, seed) > 0.4f) continue;
 
-                float temp = temperatureAt(px, pz, forest.size, seed);
-                float moist = moistureAt(px, pz, forest.size, seed);
-                float nxs = px / forest.size, nzs = pz / forest.size;
-                float volc = fractalNoise(nxs * 1.6f + 61f, nzs * 1.6f - 22f, seed + 404);
                 int biome = biomeAt(forest, px, pz);
+                if (biome < 0 || biome >= BIOME_DENSITY.length) continue;
+                // Hard ban: no canopy trees in desert / beach / badlands / mesa / volcano
+                if (biome == BIOME_DESERT || biome == BIOME_BEACH || biome == BIOME_BADLANDS
+                        || biome == BIOME_MESA || biome == BIOME_VOLCANO) continue;
+                int[] kinds = BIOME_TREES[biome];
+                if (kinds.length == 0) continue;
+
+                // Cluster mask — forests/swamp dense patches, tundra sparse
+                float cluster = fractalNoise(px * 0.018f + 3f, pz * 0.018f - 2f, seed + 2200);
+                float clusterNeed = 0.35f;
+                if (biome == BIOME_FOREST || biome == BIOME_JUNGLE || biome == BIOME_TAIGA) clusterNeed = 0.28f;
+                if (biome == BIOME_SWAMP || biome == BIOME_MANGROVE) clusterNeed = 0.32f;
+                if (biome == BIOME_SNOW || biome == BIOME_ALPINE || biome == BIOME_HIGHLANDS) clusterNeed = 0.48f;
+                if (biome == BIOME_SAVANNA || biome == BIOME_DRY_FOREST) clusterNeed = 0.55f;
+                if (cluster < clusterNeed) continue;
+
                 float groundY = heightAt(px, pz, forest.size, forest.heightScale, seed);
+                if (groundY < forest.waterLevel + 0.35f && biome != BIOME_SWAMP && biome != BIOME_MANGROVE)
+                    continue;
 
                 float density = hash2D((int) (xPos * 3), (int) (zPos * 3), seed + 991);
                 if (density > BIOME_DENSITY[biome] / 100f) continue;
-
-                int[] kinds = BIOME_TREES[biome];
-                if (kinds.length == 0) continue;
 
                 ForestTree tree = new ForestTree();
                 tree.position = Helpers.newVector3(px, groundY, pz);

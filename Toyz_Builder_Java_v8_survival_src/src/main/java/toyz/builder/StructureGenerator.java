@@ -256,6 +256,51 @@ public final class StructureGenerator {
         r.spawners.add(s);
     }
 
+
+    private static void addSwampHut(Result r, float cx, float cz, float ground, float scale, int seed) {
+        int half = Math.max(2, Math.round(2.5f * scale));
+        int height = Math.max(2, Math.round(2.5f * scale));
+        float stilts = 1.2f;
+        for (int sx : new int[]{-1, 1}) {
+            for (int sz : new int[]{-1, 1}) {
+                for (int y = 0; y < 2; y++) {
+                    r.pieces.add(piece(Piece.PieceType.LogVert, cx + sx * half,
+                            ground + 0.5f + y, cz + sz * half, 0, Piece.PieceColor.Walnut));
+                }
+            }
+        }
+        float floorY = ground + stilts;
+        addBlockWall(r.pieces, cx, cz, floorY, half, height, Piece.PieceType.BlockWood, Piece.PieceColor.Pine);
+        for (int x = -half + 1; x < half; x++) {
+            for (int z = -half + 1; z < half; z++) {
+                r.pieces.add(piece(Piece.PieceType.PlankWide, cx + x, floorY + 0.05f, cz + z, 0, Piece.PieceColor.Oak));
+            }
+        }
+        r.pieces.add(piece(Piece.PieceType.Door, cx, floorY + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Walnut));
+        r.pieces.add(piece(Piece.PieceType.Sign, cx, floorY + 1.6f, cz - half - 0.1f, 0, Piece.PieceColor.Pine));
+        addSpawner(r, cx, cz, ground, Mob.Kind.IMP, 0, 0, 7f, 2);
+    }
+
+    private static void addTundraHut(Result r, float cx, float cz, float ground, float scale, int seed) {
+        int half = Math.max(2, Math.round(3f * scale));
+        int height = Math.max(2, Math.round(2.5f * scale));
+        addBlockWall(r.pieces, cx, cz, ground, half, height, Piece.PieceType.BlockStone, Piece.PieceColor.Natural);
+        for (int x = -half; x <= half; x++) {
+            r.pieces.add(piece(Piece.PieceType.BlockWood, cx + x, ground + height + 0.5f, cz, 0, Piece.PieceColor.Pine));
+        }
+        for (int sx : new int[]{-1, 1}) {
+            for (int sz : new int[]{-1, 1}) {
+                r.pieces.add(piece(Piece.PieceType.LogVert, cx + sx * half,
+                        ground + height + 1.0f, cz + sz * half, 0, Piece.PieceColor.Pine));
+            }
+        }
+        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Walnut));
+        r.pieces.add(piece(Piece.PieceType.Sign, cx, ground + 1.6f, cz - half - 0.1f, 0, Piece.PieceColor.Pine));
+        r.pieces.add(piece(Piece.PieceType.FabricFlag, cx, ground + height + 2.2f, cz, 0, Piece.PieceColor.White));
+        addSpawner(r, cx, cz, ground, Mob.Kind.ICE_WISP, 0, 0, 8f, 2);
+        addSpawner(r, cx, cz, ground, Mob.Kind.IMP, half + 2f, 0, 9f, 1);
+    }
+
     private static void addDesertTemple(Result r, float cx, float cz, float ground, float scale, int seed) {
         int half = Math.max(3, Math.round(4 * scale));
         int height = Math.max(3, Math.round(4 * scale));
@@ -299,7 +344,17 @@ public final class StructureGenerator {
                         || b == toyz.builder.terrain.BiomeId.BADLANDS
                         || b == toyz.builder.terrain.BiomeId.MESA
                         || b == toyz.builder.terrain.BiomeId.SAVANNA;
-                if ("temple".equals(kind) || desert) {
+                boolean swamp = b == toyz.builder.terrain.BiomeId.SWAMP
+                        || b == toyz.builder.terrain.BiomeId.MANGROVE;
+                boolean tundra = b == toyz.builder.terrain.BiomeId.SNOW
+                        || b == toyz.builder.terrain.BiomeId.TAIGA
+                        || b == toyz.builder.terrain.BiomeId.ALPINE
+                        || b == toyz.builder.terrain.BiomeId.FROZEN_LAKE;
+                if (swamp) {
+                    addSwampHut(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if (tundra) {
+                    addTundraHut(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if ("temple".equals(kind) || desert) {
                     if (desert) addDesertTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
                     else addTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
                 } else if ("bridge".equals(kind)) {

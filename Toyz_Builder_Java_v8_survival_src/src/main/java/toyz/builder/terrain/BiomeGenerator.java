@@ -33,13 +33,14 @@ public final class BiomeGenerator {
         float e = s.height;
         float volc = s.continentalness; // reused nuance
 
-        // High elevation
-        if (e > 14f) {
-            if (t < 0.35f) return BiomeId.SNOW;
-            if (m < 0.35f) return BiomeId.ALPINE;
+        // High elevation / tundra
+        if (e > 12f) {
+            if (t < 0.40f) return BiomeId.SNOW;
+            if (m < 0.38f) return BiomeId.ALPINE;
             return BiomeId.HIGHLANDS;
         }
-        if (e > 10f && t < 0.4f) return BiomeId.TAIGA;
+        if (t < 0.22f) return BiomeId.SNOW; // polar lowlands
+        if (e > 8f && t < 0.42f) return BiomeId.TAIGA;
 
         // Hot dry — larger desert bands (visible map segments)
         if (t > 0.62f && m < 0.35f) {
@@ -52,8 +53,8 @@ public final class BiomeGenerator {
         // Volcanic pockets
         if (t > 0.6f && m < 0.4f && volc > 0.78f && e > 5f) return BiomeId.VOLCANIC;
 
-        // Wet low
-        if (m > 0.7f && e < 4f) return BiomeId.SWAMP;
+        // Wet low — swamp band (before jungle so lowlands stay boggy)
+        if (m > 0.58f && e < 5.5f && t > 0.35f && t < 0.72f) return BiomeId.SWAMP;
         if (t > 0.65f && m > 0.6f) return BiomeId.JUNGLE;
 
         // Temperate
