@@ -20,6 +20,9 @@ public final class WaterGenerator {
     public static WaterGenerator build(WorldConfig cfg) {
         WaterGenerator w = new WaterGenerator();
         w.oceanLevel = cfg.heightScale * -0.28f;
+        if (cfg.nether) {
+            w.oceanLevel = cfg.heightScale * -0.15f; // lava seas sit higher
+        }
         if (cfg.type == WorldConfig.WorldType.FLAT) {
             w.oceanLevel = -0.5f;
             return w;

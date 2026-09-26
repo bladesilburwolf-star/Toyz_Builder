@@ -48,7 +48,7 @@ public final class TerrainGenerator {
             float dz = (h3 - h4) / (2f * e);
             s.slope = (float) Math.sqrt(dx * dx + dz * dz);
             s.flatness = 1f / (1f + s.slope * 4f);
-            s.biome = BiomeGenerator.pick(s);
+            s.biome = BiomeGenerator.pick(s, config);
             DepthGenerator.fillSample(s, config);
             s.structureScore = 0f;
             if (!s.inWater && !s.riverChannel) {
@@ -65,6 +65,7 @@ public final class TerrainGenerator {
 
     public static WorldData generate(WorldConfig cfg) {
         cfg.applyPresetTuning();
+        if (cfg.nether) cfg.applyNether();
         WorldData w = new WorldData();
         w.config = cfg;
         w.water = WaterGenerator.build(cfg);

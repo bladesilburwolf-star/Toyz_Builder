@@ -1,28 +1,35 @@
 package toyz.builder.terrain;
 
-/**
- * Climate fields → biome id with soft transitions (no hard borders).
- */
 public final class BiomeGenerator {
     private BiomeGenerator() {}
 
     public static void fillClimate(TerrainSample s, WorldConfig cfg) {
-        float size = cfg.size;
-        float nx = s.x / size;
-        float nz = s.z / size;
-        int seed = cfg.seed;
-
-        s.continentalness = Noise.fractal(nx * 1.1f + 3f, nz * 1.1f - 2f, seed + 11, 4);
-        s.temperature = Noise.fractal(nx * 0.9f + 31f, nz * 0.9f - 12f, seed + 100, 4);
-        // latitude-ish: colder toward +Z edge
-        s.temperature = clamp01(s.temperature * 0.75f + (1f - Math.abs(nz)) * 0.25f);
-        s.moisture = Noise.fractal(nx * 0.8f - 5f, nz * 0.8f + 9f, seed + 555, 4);
-        s.erosion = Noise.fractal(nx * 2.2f + 17f, nz * 2.2f - 9f, seed + 222, 3);
+        float nx = s.x / cfg.size, nz = s.z / cfg.size;
+        if (cfg.nether) {
+            s.temperature = 0.85f + 0.15f * Noise.fractal(nx * 2.2f, nz * 2.2f, cfg.seed + 11, 3);
+            s.moisture = 0.15f + 0.4f * Noise.fractal(nx * 1.8f + 4f, nz * 1.8f, cfg.seed + 22, 3);
+            s.continentalness = Noise.fractal(nx * 1.2f - 2f, nz * 1.2f + 3f, cfg.seed + 33, 2);
+            s.erosion = Noise.fractal(nx * 3f, nz * 3f, cfg.seed + 44, 2);
+            return;
+        }
+        s.temperature = Noise.fractal(nx * 1.4f + 1.1f, nz * 1.4f - 0.7f, cfg.seed + 101, 4);
+        s.moisture = Noise.fractal(nx * 1.5f - 2.3f, nz * 1.5f + 0.9f, cfg.seed + 202, 4);
+        s.continentalness = Noise.fractal(nx * 0.9f, nz * 0.9f, cfg.seed + 303, 3);
+        s.erosion = Noise.fractal(nx * 2.4f + 5f, nz * 2.4f - 3f, cfg.seed + 404, 3);
     }
 
-    public static BiomeId pick(TerrainSample s) {
+    public static BiomeId pick(TerrainSample s, WorldConfig cfg) {
+        if (cfg != null && cfg.nether) return pickNether(s);
+
         if (s.inWater && s.temperature < 0.28f) return BiomeId.FROZEN_LAKE;
-        if (s.inWater) return BiomeId.OCEAN;
+        // Warm shallow water → coral reef
+        if (s.inWater) {
+            if (s.temperature > 0.52f && s.waterProximity > 0.25f
+                    && s.moisture > 0.30f && s.slope < 0.55f) {
+                return BiomeId.CORAL_REEF;
+            }
+            return BiomeId.OCEAN;
+        }
         if (s.waterProximity > 0.55f && s.height < 2.5f) {
             if (s.moisture > 0.55f) return BiomeId.MANGROVE;
             return BiomeId.BEACH;
@@ -31,33 +38,27 @@ public final class BiomeGenerator {
         float t = s.temperature;
         float m = s.moisture;
         float e = s.height;
-        float volc = s.continentalness; // reused nuance
+        float volc = s.continentalness;
 
-        // High elevation / tundra
         if (e > 12f) {
             if (t < 0.40f) return BiomeId.SNOW;
             if (m < 0.38f) return BiomeId.ALPINE;
             return BiomeId.HIGHLANDS;
         }
-        if (t < 0.22f) return BiomeId.SNOW; // polar lowlands
+        if (t < 0.22f) return BiomeId.SNOW;
         if (e > 8f && t < 0.42f) return BiomeId.TAIGA;
 
-        // Hot dry — larger desert bands (visible map segments)
         if (t > 0.62f && m < 0.35f) {
             if (e > 7f && s.erosion > 0.5f) return BiomeId.MESA;
             if (s.erosion > 0.55f) return BiomeId.BADLANDS;
             return BiomeId.DESERT;
         }
         if (t > 0.58f && m < 0.42f) return BiomeId.SAVANNA;
-
-        // Volcanic pockets
         if (t > 0.6f && m < 0.4f && volc > 0.78f && e > 5f) return BiomeId.VOLCANIC;
 
-        // Wet low — swamp band (before jungle so lowlands stay boggy)
         if (m > 0.58f && e < 5.5f && t > 0.35f && t < 0.72f) return BiomeId.SWAMP;
         if (t > 0.65f && m > 0.6f) return BiomeId.JUNGLE;
 
-        // Temperate
         if (m > 0.55f && t > 0.45f && t < 0.65f) {
             if (m > 0.7f) return BiomeId.BIRCH;
             return BiomeId.FOREST;
@@ -68,7 +69,18 @@ public final class BiomeGenerator {
         return BiomeId.MEADOW;
     }
 
-    private static float clamp01(float v) {
-        return v < 0f ? 0f : (v > 1f ? 1f : v);
+    /** Compatibility when only sample is passed. */
+    public static BiomeId pick(TerrainSample s) {
+        return pick(s, null);
+    }
+
+    private static BiomeId pickNether(TerrainSample s) {
+        float t = s.temperature;
+        float m = s.moisture;
+        float e = s.height;
+        // Three biomes: wastes (default), crimson (moist), basalt (high/eroded)
+        if (e > 12f || s.erosion > 0.62f) return BiomeId.NETHER_BASALT;
+        if (m > 0.42f) return BiomeId.NETHER_CRIMSON;
+        return BiomeId.NETHER_WASTES;
     }
 }

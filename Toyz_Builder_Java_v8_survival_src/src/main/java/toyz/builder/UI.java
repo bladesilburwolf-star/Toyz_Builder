@@ -252,11 +252,11 @@ public final class UI {
         Rectangle panel = Helpers.newRectangle((sw - panelW) * 0.5f, (sh - panelH) * 0.5f, panelW, panelH);
         drawSteelPanel(panel, "CREATE NEW WORLD  //  WORLD GENERATOR");
 
-        String[] types = { "FLAT", "REGULAR", "AMPLIFIED" };
+        String[] types = { "FLAT", "REGULAR", "AMPLIFIED", "NETHER" };
         float x = panel.x() + 28f, y = panel.y() + 55f, w = panel.width() - 56f;
         DrawText("WORLD TYPE", (int)x, (int)y, 16, PHOSPHOR_DIM); y += 25;
         for (int i = 0; i < types.length; i++) {
-            Rectangle r = Helpers.newRectangle(x + i * (w / 3f), y, w / 3f - 8f, 42);
+            Rectangle r = Helpers.newRectangle(x + i * (w / 4f), y, w / 4f - 6f, 42);
             if (drawSteelButton(r, types[i], state.worldTypeIndex == i)) { state.worldTypeIndex = i; }
         }
         y += 65;

@@ -16,6 +16,8 @@ public final class WorldConfig {
     public MapgenPreset preset = MapgenPreset.V6;
     public boolean structures = true;
     public boolean skyIslands = false;
+    /** Nether dimension (red sky, lava, 3 biomes). */
+    public boolean nether = false;
     public float size = 400f;
     public float sampleSpacing = 4f;
     public float heightScale = 16f;
@@ -51,6 +53,7 @@ public final class WorldConfig {
             case V6: heightScale = 18f; maxDepth = 22f; break;
             case V7: heightScale = 20f; maxDepth = 28f; break;
             case FLAT: heightScale = 2f; maxDepth = 4f; skyIslands = false; break;
+
             case AMPLIFIED: heightScale = 32f; maxDepth = 30f; break;
         }
         if (type == WorldType.AMPLIFIED && preset != MapgenPreset.FLAT)
@@ -64,7 +67,12 @@ public final class WorldConfig {
         WorldConfig c = new WorldConfig(seed, t, structures);
         c.preset = (t == WorldType.FLAT) ? MapgenPreset.FLAT
                 : (t == WorldType.AMPLIFIED) ? MapgenPreset.AMPLIFIED : MapgenPreset.V6;
+        if (wt == toyz.builder.Terrain.WorldType.NETHER) {
+            c.nether = true;
+            c.preset = MapgenPreset.V6;
+        }
         c.applyPresetTuning();
+        if (c.nether) c.applyNether();
         return c;
     }
 
@@ -82,6 +90,14 @@ public final class WorldConfig {
             case AMPLIFIED: return 1.4f;
             default: return 1f;
         }
+    }
+
+    public void applyNether() {
+        if (!nether) return;
+        heightScale = 22f;
+        maxDepth = 16f;
+        skyIslands = false;
+        // lava-like water level sits higher relative to floor
     }
 
     public float waterStrength() {

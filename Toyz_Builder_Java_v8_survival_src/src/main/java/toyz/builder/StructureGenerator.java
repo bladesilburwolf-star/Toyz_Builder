@@ -257,6 +257,21 @@ public final class StructureGenerator {
     }
 
 
+    private static void addNetherFort(Result r, float cx, float cz, float ground, float scale, int seed) {
+        int half = Math.max(3, Math.round(4 * scale));
+        int height = Math.max(4, Math.round(5 * scale));
+        addBlockWall(r.pieces, cx, cz, ground, half, height, Piece.PieceType.BlockStone, Piece.PieceColor.Natural);
+        // crimson accents
+        for (int y = 0; y < height; y += 2) {
+            r.pieces.add(piece(Piece.PieceType.BlockMetal, cx + half, ground + 0.5f + y, cz, 0, Piece.PieceColor.Red));
+            r.pieces.add(piece(Piece.PieceType.BlockMetal, cx - half, ground + 0.5f + y, cz, 0, Piece.PieceColor.Red));
+        }
+        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Walnut));
+        r.pieces.add(piece(Piece.PieceType.FabricFlag, cx, ground + height + 1.5f, cz, 0, Piece.PieceColor.Red));
+        addSpawner(r, cx, cz, ground, Mob.Kind.FIRE_SPRITE, 0, 0, 7f, 3);
+        addSpawner(r, cx, cz, ground, Mob.Kind.IMP, half + 2f, 0, 9f, 2);
+    }
+
     private static void addSwampHut(Result r, float cx, float cz, float ground, float scale, int seed) {
         int half = Math.max(2, Math.round(2.5f * scale));
         int height = Math.max(2, Math.round(2.5f * scale));
@@ -350,7 +365,10 @@ public final class StructureGenerator {
                         || b == toyz.builder.terrain.BiomeId.TAIGA
                         || b == toyz.builder.terrain.BiomeId.ALPINE
                         || b == toyz.builder.terrain.BiomeId.FROZEN_LAKE;
-                if (swamp) {
+                boolean nether = b != null && b.isNether();
+                if (nether) {
+                    addNetherFort(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if (swamp) {
                     addSwampHut(r, site.x, site.z, ground, sc, terrain.seed + n);
                 } else if (tundra) {
                     addTundraHut(r, site.x, site.z, ground, sc, terrain.seed + n);

@@ -108,6 +108,8 @@ public final class Terrain {
 
     /** Decorative rock outcrop cluster (uses rock/stone textures). */
     public static class RockOutcrop {
+        public boolean coral;
+        public boolean nether;
         public Vector3 position;
         public float scale;
         public float rotation;
@@ -145,7 +147,7 @@ public final class Terrain {
         }
     }
 
-    public enum WorldType { FLAT, NORMAL, AMPLIFIED }
+    public enum WorldType { FLAT, NORMAL, AMPLIFIED, NETHER }
 
     public static class WorldConfig {
         public WorldType type = WorldType.NORMAL;
@@ -188,6 +190,7 @@ public final class Terrain {
         public int seed = 0xC0FFEE;
         public WorldType worldType = WorldType.NORMAL;
         public boolean structuresEnabled = true;
+        public boolean nether = false;
         /** Terrain V2/V3 continuous world data (height, biomes, rivers, structure sites). */
         public toyz.builder.terrain.TerrainGenerator.WorldData v2;
         public Model waterOceanMesh, waterRiverMesh, waterFrozenMesh;
@@ -200,6 +203,7 @@ public final class Terrain {
     /** Set from title menu before generateForestTerrain. */
     public static int pendingMapgenPreset = 4; // V6
     public static boolean pendingSkyIslands = false;
+    public static boolean pendingNether = false;
 
 
     private static final float WATER_LEVEL_FRAC = -0.30f;
@@ -244,7 +248,7 @@ public final class Terrain {
     private static int biomeToMat(int biome) {
         if (biome == BIOME_DESERT || biome == BIOME_BEACH || biome == BIOME_SAVANNA) return 1;
         if (biome == BIOME_HIGHLANDS || biome == BIOME_ALPINE || biome == BIOME_BADLANDS
-                || biome == BIOME_MESA || biome == BIOME_VOLCANO) return 2;
+                || biome == BIOME_MESA || biome == BIOME_VOLCANO) return 2; // nether maps here
         if (biome == BIOME_SWAMP || biome == BIOME_MANGROVE || biome == BIOME_DRY_FOREST) return 3;
         if (biome == BIOME_SNOW || biome == BIOME_FROZEN_LAKE) return 4;
         return 0;
@@ -434,9 +438,13 @@ public final class Terrain {
             case MESA: return BIOME_MESA;
             case MANGROVE: return BIOME_MANGROVE;
             case BEACH: case OCEAN: return BIOME_BEACH;
+            case CORAL_REEF: return BIOME_BEACH; // sand/rock under clear water — special draw
             case HIGHLANDS: return BIOME_HIGHLANDS;
             case DRY_FOREST: return BIOME_DRY_FOREST;
             case FROZEN_LAKE: return BIOME_FROZEN_LAKE;
+            case NETHER_WASTES: return BIOME_VOLCANO;
+            case NETHER_CRIMSON: return BIOME_MESA;
+            case NETHER_BASALT: return BIOME_BADLANDS;
             default: return BIOME_MEADOW;
         }
     }
@@ -586,7 +594,10 @@ public final class Terrain {
             int pi = Math.max(0, Math.min(5, pendingMapgenPreset));
             v2cfg.preset = toyz.builder.terrain.WorldConfig.MapgenPreset.values()[pi];
             v2cfg.skyIslands = pendingSkyIslands;
+            v2cfg.nether = pendingNether || forest.worldType == WorldType.NETHER;
+            forest.nether = v2cfg.nether;
             v2cfg.applyPresetTuning();
+            if (v2cfg.nether) v2cfg.applyNether();
             activeV2 = toyz.builder.terrain.TerrainGenerator.generate(v2cfg);
             forest.v2 = activeV2;
             forest.waterLevel = activeV2.oceanLevel;
@@ -695,6 +706,29 @@ public final class Terrain {
                     int cg = (int) ((c.g() & 0xFF) * (1f - acc) + 255 * acc);
                     int cb = (int) ((c.b() & 0xFF) * (1f - acc) + 255 * acc);
                     c = Helpers.newColor(cr, cg, cb, 255);
+                }
+                // Nether — red / orange / dark basalt tints on rock material
+                if (forest.nether) {
+                    float n = fractalNoise(nxs * 3f, nzs * 3f, seed + 4400);
+                    if (biome == BIOME_VOLCANO) { // wastes
+                        c = Helpers.newColor((int)(160 + n * 60), (int)(40 + n * 30), (int)(25 + n * 15), 255);
+                    } else if (biome == BIOME_MESA) { // crimson
+                        c = Helpers.newColor((int)(180 + n * 50), (int)(30 + n * 20), (int)(40 + n * 25), 255);
+                    } else { // basalt
+                        c = Helpers.newColor((int)(55 + n * 40), (int)(50 + n * 35), (int)(55 + n * 40), 255);
+                    }
+                }
+                // Coral reef shallows — blue-green rock tint (overworld water)
+                if (!forest.nether && forest.v2 != null) {
+                    try {
+                        toyz.builder.terrain.BiomeId vb =
+                            toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, worldX, worldZ);
+                        if (vb == toyz.builder.terrain.BiomeId.CORAL_REEF) {
+                            float n = fractalNoise(nxs * 5f, nzs * 5f, seed + 5500);
+                            c = Helpers.newColor(
+                                (int)(40 + n * 50), (int)(140 + n * 60), (int)(150 + n * 70), 255);
+                        }
+                    } catch (Throwable ignored) {}
                 }
                 colors.put(i * 4, (byte) clamp(c.r() & 0xFF, 0f, 255f));
                 colors.put(i * 4 + 1, (byte) clamp(c.g() & 0xFF, 0f, 255f));
@@ -844,7 +878,10 @@ public final class Terrain {
                 .color(Helpers.newColor(255, 90, 20, 255));
         }
 
-        // ---- trees (clustered by biome; none in desert/beach) ----
+        // ---- trees (clustered by biome; none in desert/beach/nether) ----
+        if (forest.nether) {
+            System.out.println("[Terrain] Nether — skipping overworld trees");
+        }
         final float spacing = 9.0f;
         float treeArea = forest.size * 0.47f;
         for (float zPos = -treeArea; zPos <= treeArea; zPos += spacing) {
@@ -853,6 +890,7 @@ public final class Terrain {
                 float jitterZ = (hash2D((int) (zPos * 10), (int) (xPos * 10), seed + 77) - 0.5f) * 5f;
                 float px = xPos + jitterX;
                 float pz = zPos + jitterZ;
+                if (forest.nether) continue;
                 if (px * px + pz * pz < 20f * 20f) continue; // spawn bowl
                 if (riverInfluence(px / forest.size, pz / forest.size, seed) > 0.4f) continue;
 
@@ -901,8 +939,8 @@ public final class Terrain {
             }
         }
 
-        // Landmark spruces on ridges
-        for (int i = 0; i < 5; i++) {
+        // Landmark spruces on ridges (overworld only)
+        for (int i = 0; !forest.nether && i < 5; i++) {
             float angle = hash2D(i, 0, seed + 456) * 360f;
             float distance = 60f + hash2D(i, 1, seed + 789) * 110f;
             float px = (float) (Math.cos(Math.toRadians(angle)) * distance);
@@ -918,10 +956,80 @@ public final class Terrain {
             forest.trees.add(landmark);
         }
 
+
+        // ---- Coral reef props: tall coral grass + tinted rock pillars (overworld water) ----
+        if (!forest.nether && forest.v2 != null) {
+            float coralSpacing = 7f;
+            float coralArea = forest.size * 0.42f;
+            for (float zPos = -coralArea; zPos <= coralArea; zPos += coralSpacing) {
+                for (float xPos = -coralArea; xPos <= coralArea; xPos += coralSpacing) {
+                    float px = xPos + (hash2D((int)xPos, (int)zPos, seed + 61) - 0.5f) * 4f;
+                    float pz = zPos + (hash2D((int)zPos, (int)xPos, seed + 62) - 0.5f) * 4f;
+                    try {
+                        toyz.builder.terrain.BiomeId vb =
+                            toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, px, pz);
+                        if (vb != toyz.builder.terrain.BiomeId.CORAL_REEF) continue;
+                    } catch (Throwable t) { continue; }
+                    float gy = heightAt(px, pz, forest.size, forest.heightScale, seed);
+                    // Tall coral grass (reuse vegetation as tall type)
+                    if (hash2D((int)(px*3), (int)(pz*3), seed + 63) < 0.55f) {
+                        Vegetation veg = new Vegetation();
+                        veg.position = Helpers.newVector3(px, gy + 0.05f, pz);
+                        veg.kind = 2;
+                        veg.variant = (int)(hash2D((int)px, (int)pz, seed + 65) * 4f) % 4;
+                        veg.rotation = hash2D((int)px, (int)pz, seed + 64) * 360f;
+                        veg.swayPhase = hash2D((int)px, (int)pz, seed + 69) * 6.28f;
+                        forest.vegetation.add(veg);
+                    }
+                    // Rock pillar coral (tinted at draw via colorVariant on rock)
+                    if (hash2D((int)(px*5), (int)(pz*5), seed + 66) < 0.28f) {
+                        RockOutcrop rock = new RockOutcrop();
+                        rock.position = Helpers.newVector3(px, gy, pz);
+                        rock.scale = 0.6f + hash2D((int)px, (int)pz, seed + 67) * 1.2f;
+                        rock.rotation = hash2D((int)px, (int)pz, seed + 68) * 360f;
+                        rock.coral = true;
+                        rock.variant = (int)(hash2D((int)px, (int)pz, seed + 70) * 4f) % 4;
+                        rock.blocks = 2 + (int)(hash2D((int)px, (int)pz, seed + 71) * 3f);
+                        forest.rocks.add(rock);
+                    }
+                }
+            }
+            System.out.println("[Terrain] coral props placed in reefs");
+        }
+
+        // ---- Nether props: denser magma + basalt pillars ----
+        if (forest.nether) {
+            float nArea = forest.size * 0.45f;
+            for (float zPos = -nArea; zPos <= nArea; zPos += 14f) {
+                for (float xPos = -nArea; xPos <= nArea; xPos += 14f) {
+                    float px = xPos + (hash2D((int)xPos, (int)zPos, seed + 71) - 0.5f) * 6f;
+                    float pz = zPos + (hash2D((int)zPos, (int)xPos, seed + 72) - 0.5f) * 6f;
+                    float gy = heightAt(px, pz, forest.size, forest.heightScale, seed);
+                    if (hash2D((int)px, (int)pz, seed + 73) < 0.35f) {
+                        MagmaPool pool = new MagmaPool();
+                        pool.position = Helpers.newVector3(px, gy + 0.05f, pz);
+                        pool.radius = 2.5f + hash2D((int)px, (int)pz, seed + 74) * 4f;
+                        forest.magmaPools.add(pool);
+                    }
+                    if (hash2D((int)px, (int)pz, seed + 75) < 0.22f) {
+                        RockOutcrop rock = new RockOutcrop();
+                        rock.position = Helpers.newVector3(px, gy, pz);
+                        rock.scale = 1.2f + hash2D((int)px, (int)pz, seed + 76) * 2.5f;
+                        rock.rotation = hash2D((int)px, (int)pz, seed + 77) * 360f;
+                        rock.nether = true;
+                        rock.variant = (int)(hash2D((int)px, (int)pz, seed + 78) * 4f) % 4;
+                        rock.blocks = 3 + (int)(hash2D((int)px, (int)pz, seed + 79) * 4f);
+                        forest.rocks.add(rock);
+                    }
+                }
+            }
+            System.out.println("[Terrain] Nether magma+pillars magma=" + forest.magmaPools.size());
+        }
+
         // ---- vegetation (grass tufts + flowers, no collision) ----
         final float vegSpacing = 5.0f;
         float vegArea = forest.size * 0.46f;
-        for (float zPos = -vegArea; zPos <= vegArea; zPos += vegSpacing) {
+        for (float zPos = -vegArea; !forest.nether && zPos <= vegArea; zPos += vegSpacing) {
             for (float xPos = -vegArea; xPos <= vegArea; xPos += vegSpacing) {
                 float jitterX = (hash2D((int) (xPos * 7), (int) (zPos * 7), seed + 202) - 0.5f) * vegSpacing;
                 float jitterZ = (hash2D((int) (zPos * 7), (int) (xPos * 7), seed + 303) - 0.5f) * vegSpacing;
@@ -1401,13 +1509,24 @@ public final class Terrain {
             float sway = (float) Math.sin(time * 1.6f + veg.swayPhase) * 0.06f;
 
             if (veg.kind == 0) {
-                // grass tuft: 3 thin blades in a fan, swaying
                 Color c = K_TUFT[veg.variant & 3];
                 DrawCube(Helpers.newVector3(x + sway, y + 0.22f, z), 0.07f, 0.44f, 0.07f, c);
                 DrawCube(Helpers.newVector3(x + 0.08f - sway, y + 0.16f, z + 0.05f), 0.06f, 0.32f, 0.06f, c);
                 DrawCube(Helpers.newVector3(x - 0.07f + sway, y + 0.15f, z - 0.05f), 0.06f, 0.30f, 0.06f, c);
+            } else if (veg.kind == 2) {
+                // Tall coral grass — cyan/pink/purple, no fish yet
+                Color[] coral = {
+                    Helpers.newColor(40, 200, 180, 255),
+                    Helpers.newColor(220, 90, 160, 255),
+                    Helpers.newColor(90, 80, 220, 255),
+                    Helpers.newColor(50, 160, 220, 255)
+                };
+                Color c = coral[veg.variant & 3];
+                float h = 1.1f + (veg.variant & 3) * 0.25f;
+                DrawCube(Helpers.newVector3(x + sway, y + h * 0.5f, z), 0.10f, h, 0.10f, c);
+                DrawCube(Helpers.newVector3(x + 0.12f - sway, y + h * 0.4f, z + 0.08f), 0.08f, h * 0.75f, 0.08f, c);
+                DrawCube(Helpers.newVector3(x - 0.1f + sway * 0.5f, y + h * 0.35f, z - 0.06f), 0.07f, h * 0.65f, 0.07f, Fade(c, 0.9f));
             } else {
-                // flower: thin stem + small colored head cube
                 DrawCube(Helpers.newVector3(x + sway * 0.5f, y + 0.2f, z), 0.05f, 0.4f, 0.05f,
                          Helpers.newColor(60, 130, 50, 255));
                 DrawCube(Helpers.newVector3(x + sway, y + 0.44f, z), 0.16f, 0.16f, 0.16f,
@@ -1439,8 +1558,12 @@ public final class Terrain {
         float propDistSq = (maxDist * 0.85f) * (maxDist * 0.85f);
 
         // V3: continuous water meshes (no tile cubes)
-        Color oceanCol = Helpers.newColor(45, 110, 170, 200);
-        Color riverCol = Helpers.newColor(40, 130, 190, 210);
+        Color oceanCol = forest.nether
+            ? Helpers.newColor(220, 70, 20, 220)
+            : Helpers.newColor(45, 110, 170, 200);
+        Color riverCol = forest.nether
+            ? Helpers.newColor(255, 100, 30, 230)
+            : Helpers.newColor(40, 130, 190, 210);
         Color frozenCol = Helpers.newColor(200, 225, 235, 230);
         if (forest.waterOceanMesh != null && forest.waterOceanMesh.meshCount() > 0) {
             DrawModel(forest.waterOceanMesh, Helpers.newVector3(0, 0, 0), 1f, oceanCol);
@@ -1555,7 +1678,25 @@ public final class Terrain {
                 float dx = rock.position.x() - camPos.x();
                 float dz = rock.position.z() - camPos.z();
                 if (dx*dx + dz*dz > propDistSq) continue;
-                Color rc = K_ROCK[rock.variant % K_ROCK.length];
+                Color rc = K_ROCK[Math.max(0, rock.variant) % K_ROCK.length];
+                if (rock.coral) {
+                    Color[] cc = {
+                        Helpers.newColor(30, 180, 160, 255),
+                        Helpers.newColor(200, 70, 140, 255),
+                        Helpers.newColor(70, 90, 210, 255),
+                        Helpers.newColor(40, 150, 200, 255)
+                    };
+                    rc = cc[Math.max(0, rock.variant) % 4];
+                } else if (rock.nether || forest.nether) {
+                    Color[] nc = {
+                        Helpers.newColor(180, 50, 30, 255),
+                        Helpers.newColor(90, 40, 35, 255),
+                        Helpers.newColor(60, 55, 60, 255),
+                        Helpers.newColor(220, 90, 40, 255)
+                    };
+                    rc = nc[Math.max(0, rock.variant) % 4];
+                }
+                if (rock.blocks < 1) rock.blocks = 2;
                 for (int b = 0; b < rock.blocks; b++) {
                     float ox = (b % 2) * 0.25f * rock.scale;
                     float oz = ((b / 2) % 2) * 0.2f * rock.scale;

@@ -155,11 +155,12 @@ public final class ToyzBuilder {
                             try { seed = Integer.parseInt(seedText); }
                             catch (NumberFormatException ex) { seed = seedText.hashCode(); }
                         }
-                        Terrain.WorldType wt = Terrain.WorldType.values()[Math.max(0, Math.min(2, titleMenu.worldTypeIndex))];
+                        Terrain.WorldType wt = Terrain.WorldType.values()[Math.max(0, Math.min(3, titleMenu.worldTypeIndex))];
                         placedPieces.clear();
                         selectedIndex = -1;
                         Terrain.pendingMapgenPreset = titleMenu.mapgenPresetIndex;
                         Terrain.pendingSkyIslands = titleMenu.skyIslands;
+                        Terrain.pendingNether = (wt == Terrain.WorldType.NETHER);
                         forest = Terrain.generateForestTerrain(seed, wt, titleMenu.structures);
                         mapSystem.createNewMap(String.format("World %d", seed & 0xFFFF), MapSystem.MapType.OUTDOOR);
                         MapSystem.Map m = mapSystem.getCurrentMap();
@@ -752,7 +753,11 @@ public final class ToyzBuilder {
             // ================= RENDER =================
             BeginDrawing();
             int si = Math.max(0, Math.min(4, settings.skyboxIndex));
-            ClearBackground(skyColors[si]);
+            // sky tint for nether handled below
+            if (forest != null && forest.nether)
+                ClearBackground(Helpers.newColor(45, 12, 10, 255));
+            else
+                ClearBackground(skyColors[si]);
 
             BeginMode3D(camera);
             Terrain.drawForestTerrain(forest, camera._position(), settings.treeDrawDistance, worldTime);
