@@ -579,8 +579,10 @@ public final class ToyzBuilder {
                 if (gameMode.isSurvival() && Survival.enabled) {
                     Survival.update(player, forest, dt);
                     if (!menuOpen && !Survival.showCraft && !Survival.inv.isOpen
-                            && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+                            && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                         Survival.tryAttack(player.position, camYaw);
+                        Survival.tryMine(player, forest, placedPieces, pieceDefs, camYaw);
+                    }
                 }
             }
 
@@ -859,6 +861,11 @@ public final class ToyzBuilder {
                 ClearBackground(skyColors[si]);
 
             BeginMode3D(camera);
+            if (forest != null && forest.darkForestFog && !forest.magnetix) {
+                DrawCylinder(Helpers.newVector3(player.position.x(), player.position.y() - 5f, player.position.z()),
+                        55f, 55f, 30f, 12, Helpers.newColor(20, 28, 22, 55));
+            }
+
             Terrain.drawForestTerrain(forest, camera._position(), settings.treeDrawDistance, worldTime);
 			Weather.draw(camera._position());
 			

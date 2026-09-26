@@ -32,6 +32,7 @@ public final class Survival {
     public static boolean showCraft = false;
     public static int craftSelected = 0;
     public static float attackCooldown = 0f;
+    public static float mineCooldown = 0f;
     public static float toastTimer = 0f;
     public static String toast = "";
     public static final Random rng = new Random();
@@ -92,6 +93,7 @@ public final class Survival {
         if (!enabled) return;
         if (toastTimer > 0f) toastTimer -= dt;
         if (attackCooldown > 0f) attackCooldown -= dt;
+        if (mineCooldown > 0f) mineCooldown -= dt;
         Crafting.Item held = SurvivalInv.heldItem(inv);
         if (held != null && Crafting.kindOf(held) == Crafting.Kind.WEAPON) {
             bag.equippedWeapon = held;
@@ -103,12 +105,107 @@ public final class Survival {
         if (!enabled) return;
         if (toastTimer > 0f) toastTimer -= dt;
         if (attackCooldown > 0f) attackCooldown -= dt;
+        if (mineCooldown > 0f) mineCooldown -= dt;
         Crafting.Item held = SurvivalInv.heldItem(inv);
         if (held != null && Crafting.kindOf(held) == Crafting.Kind.WEAPON) {
             bag.equippedWeapon = held;
             bag.weaponDamage = Crafting.damageOf(held);
         }
         Mob.updateAll(mobs, spawners, player, forest, dt, rng);
+    }
+
+
+    /**
+     * Mine / destroy world objects: trees and placed pieces in front of player.
+     * Drops materials into survival inventory.
+     */
+    public static void tryMine(Player player, Terrain.ForestTerrain forest,
+                               java.util.List<Piece.PlacedPiece> placed,
+                               java.util.List<Piece.PieceDef> defs, float yawDeg) {
+        if (!enabled || mineCooldown > 0f || player == null) return;
+        float yaw = (float) Math.toRadians(yawDeg);
+        float fx = (float) Math.sin(yaw), fz = (float) Math.cos(yaw);
+        float px = player.position.x(), py = player.position.y() + player.eyeHeight * 0.5f, pz = player.position.z();
+        float reach = 3.2f;
+        float reach2 = reach * reach;
+
+        // 1) Trees
+        if (forest != null && forest.trees != null) {
+            Terrain.ForestTree bestTree = null;
+            float best = reach2;
+            int bestIdx = -1;
+            for (int i = 0; i < forest.trees.size(); i++) {
+                Terrain.ForestTree tr = forest.trees.get(i);
+                if (tr == null || tr.position == null) continue;
+                float dx = tr.position.x() - px, dz = tr.position.z() - pz;
+                float d2 = dx * dx + dz * dz;
+                if (d2 > best) continue;
+                float dot = dx * fx + dz * fz;
+                if (dot < 0.15f) continue;
+                best = d2;
+                bestTree = tr;
+                bestIdx = i;
+            }
+            if (bestTree != null) {
+                mineCooldown = 0.45f;
+                forest.trees.remove(bestIdx);
+                int wood = 2 + (bestTree.biomeType == 7 ? 3 : 0); // redwood yields more
+                bag.add(Crafting.Item.WOOD, wood);
+                bag.add(Crafting.Item.STICK, 1);
+                SurvivalInv.addToBag(inv, Crafting.Item.WOOD, wood);
+                SurvivalInv.addToBag(inv, Crafting.Item.STICK, 1);
+                toast("Chopped tree +" + wood + " Wood");
+                return;
+            }
+        }
+
+        // 2) Placed / structure pieces
+        if (placed != null) {
+            Piece.PlacedPiece best = null;
+            float bestD = reach2;
+            int bestIdx = -1;
+            for (int i = 0; i < placed.size(); i++) {
+                Piece.PlacedPiece pp = placed.get(i);
+                if (pp == null || pp.position == null) continue;
+                float dx = pp.position.x() - px;
+                float dy = pp.position.y() - py;
+                float dz = pp.position.z() - pz;
+                float d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 > bestD) continue;
+                float dot = dx * fx + dz * fz;
+                if (dot < 0.1f) continue;
+                bestD = d2;
+                best = pp;
+                bestIdx = i;
+            }
+            if (best != null) {
+                mineCooldown = 0.4f;
+                placed.remove(bestIdx);
+                Crafting.Item drop = dropForPiece(best.type);
+                int n = 1;
+                bag.add(drop, n);
+                SurvivalInv.addToBag(inv, drop, n);
+                toast("Mined " + drop.name + " +" + n);
+            }
+        }
+    }
+
+    private static Crafting.Item dropForPiece(Piece.PieceType type) {
+        if (type == null) return Crafting.Item.STONE;
+        switch (type) {
+            case StraightLog: case LogVert: case NotchedLog: case CornerLog:
+            case HalfLog: case LogStub: case Plank: case PlankWide: case BlockWood:
+            case FloorPlank: case Roof: case RoofPeak: case Door: case Sign:
+                return Crafting.Item.WOOD;
+            case BlockMetal: case MetalCage: case BlockIron: case BlockCopper:
+            case BlockTitanium: case BlockMagnecite:
+                return Crafting.Item.IRON_ORE;
+            case BlockStone: case BlockConcrete: case BlockSand: case BlockDirt:
+            case BlockGrass: case BlockSnow:
+                return Crafting.Item.STONE;
+            default:
+                return Crafting.Item.STONE;
+        }
     }
 
     public static void tryAttack(Vector3 playerPos, float yawDeg) {

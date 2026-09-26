@@ -28,12 +28,14 @@ public final class Terrain {
     public static final int BIOME_BADLANDS = 12, BIOME_MESA = 13, BIOME_MANGROVE = 14, BIOME_BEACH = 15;
     public static final int BIOME_HIGHLANDS = 16, BIOME_FLOWER_MEADOW = 17, BIOME_DRY_FOREST = 18;
     public static final int BIOME_FROZEN_LAKE = 19;
+    public static final int BIOME_DARK_FOREST = 20, BIOME_REDWOOD = 21, BIOME_BAMBOO = 22, BIOME_EVERGREEN = 23;
 
     public static final String[] BIOME_NAMES = {
         "Snowy Peaks", "Taiga", "Temperate Forest", "Meadow", "Autumn Woods",
         "Jungle", "Savanna", "Desert", "Swamp", "Volcanic",
         "Birch Grove", "Alpine Meadow", "Badlands", "Mesa", "Mangrove",
-        "Beach", "Rocky Highlands", "Flower Meadow", "Dry Forest", "Frozen Lake"
+        "Beach", "Rocky Highlands", "Flower Meadow", "Dry Forest", "Frozen Lake",
+        "Dark Forest", "Redwood", "Bamboo Forest", "Evergreen"
     };
 
     private static final int[][] BIOME_GRASS = {
@@ -43,34 +45,38 @@ public final class Terrain {
         /*Birch*/{95,145,70}, /*Alpine*/{120,155,100}, /*Badlands*/{180,95,50},
         /*Mesa*/{210,120,55}, /*Mangrove*/{48,105,68}, /*Beach*/{235,215,160},
         /*Highlands*/{95,100,95}, /*Flower*/{110,175,90}, /*DryForest*/{145,135,65},
-        /*Frozen*/{230,242,250}
+        /*Frozen*/{230,242,250},
+        /*DarkForest*/{28,55,32}, /*Redwood*/{55,95,50}, /*Bamboo*/{70,140,55}, /*Evergreen*/{40,75,50}
     };
 
     private static final float[] BIOME_HEIGHT_MOD = {
         1.35f,1.10f,1.00f,0.80f,0.95f,1.05f,0.85f,0.70f,0.55f,1.60f,
-        0.95f,1.35f,1.15f,1.25f,0.62f,0.35f,1.45f,0.78f,0.92f,0.28f
+        0.95f,1.35f,1.15f,1.25f,0.62f,0.35f,1.45f,0.78f,0.92f,0.28f,
+        1.05f,1.20f,0.75f,1.15f
     };
 
     private static final int[] BIOME_DENSITY = {
         /*snow*/12, /*taiga*/62, /*forest*/78, /*meadow*/18, /*autumn*/50,
         /*jungle*/88, /*savanna*/6, /*desert*/0, /*swamp*/58, /*volcano*/0,
         /*birch*/68, /*alpine*/22, /*badlands*/1, /*mesa*/1, /*mangrove*/55,
-        /*beach*/0, /*highlands*/14, /*flower*/42, /*dry*/8, /*frozen*/4
+        /*beach*/0, /*highlands*/14, /*flower*/42, /*dry*/8, /*frozen*/4,
+        /*dark*/92, /*redwood*/70, /*bamboo*/85, /*evergreen*/80
     };
 
-    // 0 oak, 1 spruce, 2 autumn oak, 3 bush, 4 acacia, 5 cactus, 6 jungle.
+    // 0 oak, 1 spruce, 2 autumn, 3 bush, 4 acacia, 5 cactus, 6 jungle, 7 redwood, 8 bamboo, 9 dark
     private static final int[][] BIOME_TREES = {
         /*snow*/{1}, /*taiga*/{1}, /*forest*/{0,2}, /*meadow*/{0,3}, /*autumn*/{2},
         /*jungle*/{6,0}, /*savanna*/{4}, /*desert*/{}, /*swamp*/{3,0}, /*volcano*/{},
         /*birch*/{0,3}, /*alpine*/{1}, /*badlands*/{}, /*mesa*/{}, /*mangrove*/{3,0},
-        /*beach*/{}, /*highlands*/{1,0}, /*flower*/{0,3}, /*dry*/{4}, /*frozen*/{1}
+        /*beach*/{}, /*highlands*/{1,0}, /*flower*/{0,3}, /*dry*/{4}, /*frozen*/{1},
+        /*dark*/{9,0}, /*redwood*/{7}, /*bamboo*/{8}, /*evergreen*/{1,7}
     };
 
     private static final int[] BIOME_VEG_DENSITY = {
-        4,18,55,90,30,70,20,0,75,0,70,40,2,2,70,1,12,100,15,2
+        4,18,55,90,30,70,20,0,75,0,70,40,2,2,70,1,12,100,15,2, 45,35,60,20
     };
     private static final int[] BIOME_FLOWER_CHANCE = {
-        0,5,25,55,20,35,15,0,30,0,30,70,0,0,45,5,5,80,10,0
+        0,5,25,55,20,35,15,0,30,0,30,70,0,0,45,5,5,80,10,0, 8,12,25,5
     };
 
     public static class ForestTree {
@@ -182,7 +188,10 @@ public final class Terrain {
         public Model featureBlockModel; // V5 landforms
         /** Authored GLB logs (preferred over GenMesh cylinders). */
         public Model logVertOak, logVertPine, logVertBirch, logVertJungle;
-        public Model logHorizOak, logHorizPine, logHorizBirch;
+        public Model logVertRedwood, logVertBamboo, logVertDarkOak;
+        public Model logHorizOak, logHorizPine, logHorizBirch, logHorizRedwood, logHorizBamboo;
+        public boolean darkForestFog = false;
+        public boolean magnetix = false;
         public Model boulderSmall, boulderMed, boulderLarge;
         public List<ForestTree> trees = new ArrayList<>();
         public List<Vegetation> vegetation = new ArrayList<>();
@@ -327,6 +336,9 @@ public final class Terrain {
     private static Model trunkForBiome(ForestTerrain f, int biomeType) {
         if (biomeType == 1 && f.logVertPine != null) return f.logVertPine;
         if (biomeType == 6 && f.logVertJungle != null) return f.logVertJungle;
+        if (biomeType == 7 && f.logVertRedwood != null) return f.logVertRedwood;
+        if (biomeType == 8 && f.logVertBamboo != null) return f.logVertBamboo;
+        if (biomeType == 9 && f.logVertDarkOak != null) return f.logVertDarkOak;
         if ((biomeType == 0 || biomeType == 2) && f.logVertOak != null) return f.logVertOak;
         if (biomeType == 4 && f.logVertBirch != null) return f.logVertBirch;
         if (f.logVertOak != null) return f.logVertOak;
@@ -523,6 +535,10 @@ public final class Terrain {
         switch (b) {
             case SNOW: return BIOME_SNOW;
             case TAIGA: return BIOME_TAIGA;
+            case EVERGREEN: return BIOME_EVERGREEN;
+            case DARK_FOREST: return BIOME_DARK_FOREST;
+            case REDWOOD: return BIOME_REDWOOD;
+            case BAMBOO: return BIOME_BAMBOO;
             case FOREST: return BIOME_FOREST;
             case MEADOW: return BIOME_MEADOW;
             case FLOWER_MEADOW: return BIOME_FLOWER_MEADOW;
@@ -977,7 +993,7 @@ public final class Terrain {
         Texture sandTex = loadTerrainTex("assets/textures/sand/sand1.png", "assets/textures/sand/sand2.png");
         Texture rockTexT = loadTerrainTex("assets/textures/rocks/rock1.png", "assets/textures/stone/stone1.png");
         Texture dirtTex = loadTerrainTex("assets/textures/dirt/dirt1.png", "assets/textures/rocks/rock3.png");
-        Texture snowTex = loadTerrainTex("assets/textures/stone/stone2.png", "assets/textures/stone/concrete.jpg");
+        Texture snowTex = loadTerrainTex("assets/textures/snow/snow.png", "assets/textures/ice/ice.jpg");
         Texture concreteTex = loadTerrainTex("assets/textures/stone/concrete.jpg", "assets/textures/stone/stone1.png");
 
         forest.terrainGrass = buildTerrainLayer(vertices, normals, texcoords, colors, vertexCount, matTris[MAT_GRASS]);
@@ -1012,9 +1028,14 @@ public final class Terrain {
         forest.logVertPine = tryLoadGlb("assets/models/pinelogv.glb");
         forest.logVertBirch = tryLoadGlb("assets/models/birchlogv.glb");
         forest.logVertJungle = tryLoadGlb("assets/models/mahoganylogv.glb");
+        forest.logVertRedwood = tryLoadGlb("assets/models/redwoodlog_v.glb");
+        forest.logVertBamboo = tryLoadGlb("assets/models/bamboo_v.glb");
+        forest.logVertDarkOak = tryLoadGlb("assets/models/darkoaklog_v.glb");
         forest.logHorizOak = tryLoadGlb("assets/models/oaklogh.glb");
         forest.logHorizPine = tryLoadGlb("assets/models/pinelogh.glb");
         forest.logHorizBirch = tryLoadGlb("assets/models/birchlogh.glb");
+        forest.logHorizRedwood = tryLoadGlb("assets/models/redwoodlog_h.glb");
+        forest.logHorizBamboo = tryLoadGlb("assets/models/bamboo_h.glb");
         forest.boulderSmall = tryLoadGlb("assets/models/bouldersmall.glb");
         forest.boulderMed = tryLoadGlb("assets/models/bouldermedium.glb");
         forest.boulderLarge = tryLoadGlb("assets/models/boulderlarge.glb");
@@ -1110,6 +1131,8 @@ public final class Terrain {
                 float cluster = fractalNoise(px * 0.018f + 3f, pz * 0.018f - 2f, seed + 2200);
                 float clusterNeed = 0.35f;
                 if (biome == BIOME_FOREST || biome == BIOME_JUNGLE || biome == BIOME_TAIGA) clusterNeed = 0.28f;
+                if (biome == BIOME_DARK_FOREST || biome == BIOME_EVERGREEN || biome == BIOME_BAMBOO) clusterNeed = 0.22f;
+                if (biome == BIOME_REDWOOD) clusterNeed = 0.30f;
                 if (biome == BIOME_SWAMP || biome == BIOME_MANGROVE) clusterNeed = 0.32f;
                 if (biome == BIOME_SNOW || biome == BIOME_ALPINE || biome == BIOME_HIGHLANDS) clusterNeed = 0.48f;
                 if (biome == BIOME_SAVANNA || biome == BIOME_DRY_FOREST) clusterNeed = 0.55f;
@@ -1137,6 +1160,9 @@ public final class Terrain {
                     case 4: tree.scale = 1.0f + sizeRoll * 0.6f; break;    // acacia
                     case 5: tree.scale = 0.9f + sizeRoll * 0.7f; break;    // cactus
                     case 6: tree.scale = 1.2f + sizeRoll * 1.0f; break;    // jungle
+                    case 7: tree.scale = 1.8f + sizeRoll * 1.4f; break;    // redwood tall
+                    case 8: tree.scale = 0.9f + sizeRoll * 0.8f; break;    // bamboo
+                    case 9: tree.scale = 1.0f + sizeRoll * 0.9f; break;    // dark oak
                     default: tree.scale = 0.85f + sizeRoll * 0.7f; break; // oak
                 }
                 forest.trees.add(tree);
@@ -1471,6 +1497,15 @@ public final class Terrain {
             System.out.println("[Terrain] V2 active biomes/sites bridged; structureSites="
                 + forest.v2.structureSites.size() + " bridges=" + forest.v2.bridgeSites.size());
         }
+        // Sample if dark forest is common near spawn
+        int darkHits = 0;
+        for (int i = 0; i < 12; i++) {
+            float ax = (hash2D(i, 3, seed) - 0.5f) * 80f;
+            float az = (hash2D(i, 4, seed) - 0.5f) * 80f;
+            if (biomeAt(forest, ax, az) == BIOME_DARK_FOREST) darkHits++;
+        }
+        forest.darkForestFog = darkHits >= 3;
+        if (forest.darkForestFog) System.out.println("[Terrain] Dark Forest fog enabled");
 
         // Dark land patches → cave world entrances (same idea as obelisks)
         if (!forest.nether && !forest.indoor && !forest.caveWorld
@@ -1563,7 +1598,9 @@ public final class Terrain {
     private static void drawTrunk(ForestTerrain f, Vector3 pos, float scale, int blocks, boolean fat, int biomeType) {
         Model m = trunkForBiome(f, fat ? 6 : biomeType);
         // GLB logs are full-height pieces — stack fewer, scale to segment height
-        boolean glb = (m == f.logVertOak || m == f.logVertPine || m == f.logVertBirch || m == f.logVertJungle);
+        boolean glb = (m == f.logVertOak || m == f.logVertPine || m == f.logVertBirch
+                || m == f.logVertJungle || m == f.logVertRedwood || m == f.logVertBamboo
+                || m == f.logVertDarkOak);
         if (glb) {
             float seg = scale * 1.05f;
             int n = Math.max(1, blocks);
@@ -1686,6 +1723,49 @@ public final class Terrain {
                             Helpers.newColor(48, 105, 45, 255));
                     }
                 }
+                return;
+            }
+            case 7: { // redwood — very tall trunk, high canopy
+                int trunkBlocks = Math.max(5, (int) (5.5f * s));
+                drawTrunk(f, t.position, s * 1.15f, trunkBlocks, true, 7);
+                Color leaf = Helpers.newColor(40, 100, 45, 255);
+                float topY = y0 + trunkBlocks * s * 1.15f;
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x, topY, z), s * 1.4f, leaf);
+                if (!lod) {
+                    DrawModel(f.leafBlockModel, Helpers.newVector3(x + 0.6f*s, topY - 0.5f*s, z), s, leaf);
+                    DrawModel(f.leafBlockModel, Helpers.newVector3(x - 0.6f*s, topY - 0.4f*s, z), s, leaf);
+                    DrawModel(f.leafBlockModel, Helpers.newVector3(x, topY - 0.3f*s, z + 0.6f*s), s, leaf);
+                }
+                return;
+            }
+            case 8: { // bamboo — thin tall stalks cluster
+                int stalks = lod ? 2 : 4;
+                for (int i = 0; i < stalks; i++) {
+                    float ox = ((i % 2) * 0.35f - 0.15f) * s;
+                    float oz = ((i / 2) * 0.35f - 0.15f) * s;
+                    int h = Math.max(3, (int)(3.5f * s + i * 0.3f));
+                    Model bm = f.logVertBamboo != null ? f.logVertBamboo : f.trunkModel;
+                    for (int j = 0; j < h; j++) {
+                        DrawModelEx(bm,
+                            Helpers.newVector3(x + ox, y0 + (j + 0.5f) * s * 0.85f, z + oz),
+                            Helpers.newVector3(0, 1, 0), 0f,
+                            Helpers.newVector3(0.45f * s, s * 0.85f, 0.45f * s),
+                            Helpers.newColor(90, 160, 70, 255));
+                    }
+                }
+                return;
+            }
+            case 9: { // dark oak — thick dark canopy
+                int trunkBlocks = Math.max(3, (int) (3.2f * s));
+                drawTrunk(f, t.position, s, trunkBlocks, true, 9);
+                Color leaf = Helpers.newColor(25, 55, 30, 255);
+                float baseY = y0 + trunkBlocks * s;
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x, baseY, z), s * 1.3f, leaf);
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x + 0.7f*s, baseY, z), s, leaf);
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x - 0.7f*s, baseY, z), s, leaf);
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x, baseY, z + 0.7f*s), s, leaf);
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x, baseY, z - 0.7f*s), s, leaf);
+                DrawModel(f.leafBlockModel, Helpers.newVector3(x, baseY + s, z), s * 0.9f, leaf);
                 return;
             }
             default: { // oak — green, birch, or rare blossom

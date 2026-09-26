@@ -49,6 +49,8 @@ public final class AssetBank {
     public static Model modelNib;
     public static Model modelChest;
     public static Model modelSword1, modelSword2, modelSword3;
+    public static Model modelAxeWood, modelAxeStone, modelAxeIron, modelAxeSteel;
+    public static Model modelPickWood, modelPickStone, modelPickIron, modelPickSteel;
     public static Model modelRaft;
     public static Model modelPanel;
 

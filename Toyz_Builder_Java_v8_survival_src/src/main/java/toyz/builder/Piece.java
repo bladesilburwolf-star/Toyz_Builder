@@ -28,7 +28,11 @@ public final class Piece {
         LoloBlock, LoloPlayer,
         // Misc playground
         Ramp, TeeterTotter, Boulder, Slide,
-        BlockWood, BlockStone, BlockMetal, BlockSand, BlockGlass
+        BlockWood, BlockStone, BlockMetal, BlockSand, BlockGlass,
+        BlockIce, BlockSnow, BlockCopper, BlockIron, BlockTitanium,
+        BlockCrystal, BlockDiamond, BlockQuartz, BlockConcrete,
+        BlockMagma, BlockDirt, BlockGrass, BlockMagnecite,
+        MetalCage, FloorPlank
     }
 
     public enum PieceColor {
@@ -93,6 +97,7 @@ public final class Piece {
     private Piece() {}
 
     private static Texture texBark, texBark2, texMetal, texMetal2, texMetal3;
+    private static Texture texIce, texSnow, texCopper, texCrystal;
     private static Texture texPlanks, texStone, texGlass, texRoof, texRoof2;
     private static Texture texGrass, texDirt, texSand, texMagma, texRock, texHouse;
 
@@ -346,13 +351,14 @@ public final class Piece {
             "assets/textures/trees/bark2.png", "assets/textures/bark2.png",
             "assets/textures/wood/pineplank.jpg", "assets/textures/wood/pinelog.jpg");
         if (texMetal == null)  texMetal  = tryLoadTexAny(
-            "assets/textures/metals/metal1.png", "assets/textures/metal1.png");
+            "assets/textures/metals/steel.jpg", "assets/textures/metals/metal1.png",
+            "assets/textures/metal1.png");
         if (texMetal2 == null) texMetal2 = tryLoadTexAny(
-            "assets/textures/metals/metal2.png", "assets/textures/metal2.png",
-            "assets/textures/metals/steel.jpg");
+            "assets/textures/metals/ironbars.png", "assets/textures/metals/ironbars.jpg",
+            "assets/textures/metals/metal2.png", "assets/textures/metals/copper.jpg");
         if (texMetal3 == null) texMetal3 = tryLoadTexAny(
-            "assets/textures/metals/metal3.png", "assets/textures/metal3.png",
-            "assets/textures/metals/castiron.jpg");
+            "assets/textures/metals/titanium.jpg", "assets/textures/metals/castiron.jpg",
+            "assets/textures/metals/metal3.png");
         if (texPlanks == null) texPlanks = tryLoadTexAny(
             "assets/textures/wood/oakplank.jpg", "assets/textures/wood/pineplank.jpg",
             "assets/textures/wood/planks1.png", "assets/textures/planks1.png",
@@ -376,6 +382,15 @@ public final class Piece {
             "assets/textures/sand/sand1.png", "assets/textures/sand1.png");
         if (texMagma == null)  texMagma  = tryLoadTexAny(
             "assets/textures/magma/magma1.png", "assets/textures/magma1.png");
+        if (texIce == null)    texIce    = tryLoadTexAny(
+            "assets/textures/ice/ice.jpg", "assets/textures/ice/ice.png");
+        if (texSnow == null)   texSnow   = tryLoadTexAny(
+            "assets/textures/snow/snow.png", "assets/textures/snow/snow.jpg");
+        if (texCopper == null) texCopper = tryLoadTexAny(
+            "assets/textures/metals/copper.jpg");
+        if (texCrystal == null) texCrystal = tryLoadTexAny(
+            "assets/textures/rocks/crystal.png", "assets/textures/rocks/quartz.jpg",
+            "assets/textures/rocks/diamond.png");
         if (texRock == null)   texRock   = tryLoadTexAny(
             "assets/textures/rocks/rock1.png", "assets/textures/rock1.png",
             "assets/textures/rocks/rock2.png");
@@ -959,6 +974,105 @@ public final class Piece {
         defs.add(d);
 
         System.out.println("[Piece] Loaded " + defs.size() + " piece definitions");
+
+        // ---- New material blocks (repo asset expansion) ----
+        String[][] matBlocks = {
+            {"BlockIce", "Block Ice", "assets/models/iceblock.glb", "ice"},
+            {"BlockSnow", "Block Snow", "assets/models/snowblock.glb", "snow"},
+            {"BlockCopper", "Block Copper", "assets/models/copperblock.glb", "copper"},
+            {"BlockIron", "Block Iron", "assets/models/ironblock.glb", "iron"},
+            {"BlockTitanium", "Block Titanium", "assets/models/titaniumblock.glb", "titanium"},
+            {"BlockCrystal", "Block Crystal", "assets/models/crystalblock.glb", "crystal"},
+            {"BlockDiamond", "Block Diamond", "assets/models/diamondblock.glb", "diamond"},
+            {"BlockQuartz", "Block Quartz", "assets/models/quartzblock.glb", "quartz"},
+            {"BlockConcrete", "Block Concrete", "assets/models/concreteblock.glb", "concrete"},
+            {"BlockMagma", "Block Magma", "assets/models/magmablock.glb", "magma"},
+            {"BlockDirt", "Block Dirt", "assets/models/dirtblock.glb", "dirt"},
+            {"BlockGrass", "Block Grass", "assets/models/grassblock.glb", "grass"},
+            {"BlockMagnecite", "Block Magnecite", "assets/models/magneciteblock.glb", "magnecite"},
+        };
+        for (String[] mb : matBlocks) {
+            d = new PieceDef();
+            try {
+                d.type = PieceType.valueOf(mb[0]);
+            } catch (Exception ex) { continue; }
+            d.name = mb[1];
+            d.category = 5;
+            d.model = tryLoadModelAny(mb[2]);
+            Texture fallbackTex = texStone;
+            Color fallbackCol = Helpers.newColor(160, 160, 165, 255);
+            if ("ice".equals(mb[3])) { fallbackTex = texIce != null ? texIce : texGlass; fallbackCol = Helpers.newColor(180, 220, 240, 220); }
+            else if ("snow".equals(mb[3])) { fallbackTex = texSnow != null ? texSnow : texStone; fallbackCol = Helpers.newColor(240, 245, 250, 255); }
+            else if ("copper".equals(mb[3])) { fallbackTex = texCopper != null ? texCopper : texMetal; fallbackCol = Helpers.newColor(180, 110, 70, 255); }
+            else if ("iron".equals(mb[3])) { fallbackTex = texMetal2 != null ? texMetal2 : texMetal; fallbackCol = Helpers.newColor(140, 140, 145, 255); }
+            else if ("titanium".equals(mb[3])) { fallbackTex = texMetal3 != null ? texMetal3 : texMetal; fallbackCol = Helpers.newColor(200, 205, 210, 255); }
+            else if ("crystal".equals(mb[3]) || "diamond".equals(mb[3]) || "quartz".equals(mb[3])) {
+                fallbackTex = texCrystal != null ? texCrystal : texGlass; fallbackCol = Helpers.newColor(160, 220, 255, 255);
+            }
+            else if ("magma".equals(mb[3])) { fallbackTex = texMagma != null ? texMagma : texStone; fallbackCol = Helpers.newColor(220, 80, 30, 255); }
+            else if ("dirt".equals(mb[3])) { fallbackTex = texDirt != null ? texDirt : texStone; fallbackCol = Helpers.newColor(110, 80, 50, 255); }
+            else if ("grass".equals(mb[3])) { fallbackTex = texGrass != null ? texGrass : texStone; fallbackCol = Helpers.newColor(70, 140, 55, 255); }
+            else if ("magnecite".equals(mb[3])) { fallbackTex = texMetal; fallbackCol = Helpers.newColor(90, 100, 120, 255); }
+            else if ("concrete".equals(mb[3])) { fallbackTex = texStone; fallbackCol = Helpers.newColor(150, 150, 148, 255); }
+            if (d.model == null)
+                d.model = makeCubeModel(1f, 1f, 1f, fallbackTex, fallbackCol);
+            d.icon = renderIcon(d.model, fallbackCol, 128);
+            d.halfExtents = Helpers.newVector3(0.5f, 0.5f, 0.5f);
+            addSnapsEndsY(d, 0.5f); addSnapsEndsX(d, 0.5f); addSnapsEndsZ(d, 0.5f);
+            defs.add(d);
+        }
+
+        // Metal cages + floors
+        d = new PieceDef();
+        d.type = PieceType.MetalCage; d.name = "Metal Cage";
+        d.category = 5; d.defaultColor = PieceColor.Steel;
+        d.model = tryLoadModelAny("assets/models/metalcage.glb", "assets/models/metalstonecage.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1.2f, 1.2f, 1.2f, texMetal, getColorFromEnum(PieceColor.Steel));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Steel), 128);
+        d.halfExtents = Helpers.newVector3(0.6f, 0.6f, 0.6f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.FloorPlank; d.name = "Floor Oak";
+        d.category = 1;
+        d.model = tryLoadModelAny("assets/models/oakfloor.glb", "assets/models/pinefloor.glb");
+        if (d.model == null)
+            d.model = makeCubeModel(1f, 0.12f, 1f, texPlanks, getColorFromEnum(PieceColor.Oak));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Oak), 128);
+        d.halfExtents = Helpers.newVector3(0.5f, 0.06f, 0.5f);
+        addSnapsEndsY(d, 0.06f);
+        defs.add(d);
+
+        // Extra wood logs: bamboo, dark oak, redwood
+        String[][] extraLogs = {
+            {"Bamboo H", "assets/models/bamboo_h.glb", "assets/models/bamboo_v.glb"},
+            {"Dark Oak H", "assets/models/darkoaklog_h.glb", "assets/models/darkoaklog_v.glb"},
+            {"Redwood H", "assets/models/redwoodlog_h.glb", "assets/models/redwoodlog_v.glb"},
+        };
+        for (String[] el : extraLogs) {
+            d = new PieceDef();
+            d.type = PieceType.StraightLog; d.name = el[0];
+            d.category = 1;
+            d.model = tryLoadModelAny(el[1]);
+            if (d.model == null)
+                d.model = makeLogModel(2.0f, texBark, getColorFromEnum(PieceColor.Oak), true);
+            d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Oak), 128);
+            d.halfExtents = Helpers.newVector3(LOG_RADIUS, LOG_RADIUS, 1.0f);
+            d.length = PieceLength.MED;
+            defs.add(d);
+            d = new PieceDef();
+            d.type = PieceType.LogVert; d.name = el[0].replace(" H", " V");
+            d.category = 1;
+            d.model = tryLoadModelAny(el[2]);
+            if (d.model == null)
+                d.model = makeLogModel(2.0f, texBark, getColorFromEnum(PieceColor.Oak), false);
+            d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Oak), 128);
+            d.halfExtents = Helpers.newVector3(LOG_RADIUS, 1.0f, LOG_RADIUS);
+            defs.add(d);
+        }
+
+        System.out.println("[Piece] defs=" + defs.size() + " (incl. material expansion)");
         return defs;
     }
 

@@ -76,7 +76,22 @@ public final class BiomeGenerator {
         if (t > 0.6f && m < 0.4f && volc > 0.78f && e > 5f) return BiomeId.VOLCANIC;
 
         if (m > 0.58f && e < 5.5f && t > 0.35f && t < 0.72f) return BiomeId.SWAMP;
-        if (t > 0.65f && m > 0.6f) return BiomeId.JUNGLE;
+        // Bamboo: warm + very wet lowlands
+        if (t > 0.58f && m > 0.72f && e < 6f) return BiomeId.BAMBOO;
+        // Jungle: hot + wet
+        if (t > 0.62f && m > 0.58f) return BiomeId.JUNGLE;
+        // Redwood: mild cool + moist mid elevation
+        if (t > 0.32f && t < 0.55f && m > 0.55f && e > 4f && e < 11f
+                && s.continentalness > 0.45f) return BiomeId.REDWOOD;
+        // Dark forest: cool-mild + high moisture, low light (noise)
+        if (t > 0.28f && t < 0.58f && m > 0.62f && e < 9f
+                && Noise.fractal(s.x * 0.01f, s.z * 0.01f, 909, 2) > 0.55f)
+            return BiomeId.DARK_FOREST;
+        // Evergreen denser than taiga
+        if (t < 0.38f && m > 0.45f && e > 3f) {
+            if (m > 0.58f) return BiomeId.EVERGREEN;
+            return BiomeId.TAIGA;
+        }
 
         if (m > 0.55f && t > 0.45f && t < 0.65f) {
             if (m > 0.7f) return BiomeId.BIRCH;

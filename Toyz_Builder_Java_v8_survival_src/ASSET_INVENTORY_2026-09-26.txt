@@ -1,0 +1,32 @@
+Toyz Builder — GitHub asset inventory (2026-09-26)
+
+TEXTURES (assets/textures/)
+  dirt/ grass/ sand/ stone/ rocks/ wood/ trees/ metals/ house/
+  magma/ water/ glass/ ice/ snow/
+  metals: steel.jpg copper.jpg titanium.jpg castiron.jpg ironbars.png
+  (old metal1/2/3.png removed — Piece.java fallbacks updated)
+
+MODELS (assets/models/)
+  Wood logs H/V: oak pine cedar cherry walnut birch mahogany teak
+                 bamboo darkoak redwood
+  Blocks: oak/pine/... wood blocks, floors, rock sand dirt grass
+          ice snow copper iron titanium crystal diamond quartz
+          concrete magma steel glass water magnecite panel
+  Build: door1 window1 sign1 ramps (oak/stone) boulders cages
+  Magnetix: *ball.glb via AssetBank paths
+  Mobs/boss: VRMan Booey bat ghost slime nib spiney pacman skull
+             guard Pede boss_* (cactus eyeballs ghost jellyfish knight pede twinskull)
+  Tools: sword1-3, axes/{wooden,stone,iron,steel}_axe.glb
+         pickaxes/ + wood_pickaxe.glb
+  Props: chestclosed raft
+
+CODE WIRING (this pass)
+  Piece.java — metal path fix; ice/snow/copper/crystal tex;
+               material block defs; bamboo/darkoak/redwood logs;
+               MetalCage FloorPlank
+  Terrain.java — snow layer uses snow/snow.png + ice fallback
+  AssetBank.java — axe + pickaxe GLB loads
+
+NEXT: forest expansion can use new tree textures/logs;
+      Magnetix can use magnecite/steel/cages;
+      tools for survival craft recipes.
