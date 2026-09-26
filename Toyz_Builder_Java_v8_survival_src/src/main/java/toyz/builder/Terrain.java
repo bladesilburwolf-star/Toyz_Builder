@@ -191,6 +191,12 @@ public final class Terrain {
         public WorldType worldType = WorldType.NORMAL;
         public boolean structuresEnabled = true;
         public boolean nether = false;
+        public java.util.List<toyz.builder.terrain.RavineGenerator.RavinePath> ravines =
+            new java.util.ArrayList<>();
+        public java.util.List<toyz.builder.terrain.RavineGenerator.OreNode> ores =
+            new java.util.ArrayList<>();
+        public java.util.List<toyz.builder.terrain.RavineGenerator.PortalObelisk> obelisks =
+            new java.util.ArrayList<>();
         /** Terrain V2/V3 continuous world data (height, biomes, rivers, structure sites). */
         public toyz.builder.terrain.TerrainGenerator.WorldData v2;
         public Model waterOceanMesh, waterRiverMesh, waterFrozenMesh;
@@ -550,6 +556,21 @@ public final class Terrain {
         return Helpers.newColor((int) (br * shade), (int) (bg * shade), (int) (bb * shade), 255);
     }
 
+    /** Returns true if player entered an active overworld obelisk (triggers Nether). */
+    public static boolean checkObeliskPortal(ForestTerrain forest, float px, float py, float pz, float radius) {
+        if (forest == null || forest.nether || forest.obelisks == null) return false;
+        float r2 = radius * radius;
+        for (toyz.builder.terrain.RavineGenerator.PortalObelisk p : forest.obelisks) {
+            if (!p.active) continue;
+            float dx = px - p.x, dz = pz - p.z;
+            if (dx * dx + dz * dz > r2) continue;
+            if (Math.abs(py - p.y) > 8f) continue;
+            p.active = false; // one-shot until regenerate
+            return true;
+        }
+        return false;
+    }
+
     public static float getTerrainHeight(ForestTerrain forest, float x, float z) {
         if (forest != null && forest.v2 != null)
             return toyz.builder.terrain.TerrainGenerator.getHeight(forest.v2, x, z);
@@ -608,6 +629,21 @@ public final class Terrain {
             }
             forest.skyIslands = activeV2.skyIslands != null ? activeV2.skyIslands
                     : new java.util.ArrayList<>();
+            forest.ravines = activeV2.ravines != null ? activeV2.ravines : new java.util.ArrayList<>();
+            forest.ores = activeV2.ores != null ? activeV2.ores : new java.util.ArrayList<>();
+            forest.obelisks = activeV2.obelisks != null ? activeV2.obelisks : new java.util.ArrayList<>();
+            // Resolve ore world Y from surface height after carve
+            if (forest.ores != null) {
+                for (toyz.builder.terrain.RavineGenerator.OreNode o : forest.ores) {
+                    float surface = heightAt(o.x, o.z, forest.size, forest.heightScale, seed);
+                    o.y = surface + o.y; // o.y was negative offset
+                }
+            }
+            if (forest.obelisks != null) {
+                for (toyz.builder.terrain.RavineGenerator.PortalObelisk p : forest.obelisks) {
+                    p.y = heightAt(p.x, p.z, forest.size, forest.heightScale, seed);
+                }
+            }
         } catch (Throwable t) {
             System.err.println("[Terrain] V2 init failed, legacy height: " + t.getMessage());
             t.printStackTrace();
@@ -1710,6 +1746,48 @@ public final class Terrain {
                             rock.scale * (1f - b * 0.08f)), rc);
                 }
             }
+            // Ore deposits — existing rock mesh + material tint
+            if (forest.ores != null && forest.rockBlockModel != null) {
+                for (toyz.builder.terrain.RavineGenerator.OreNode o : forest.ores) {
+                    float dx = o.x - camPos.x(), dz = o.z - camPos.z();
+                    if (dx * dx + dz * dz > propDistSq) continue;
+                    int[] t = o.mat.tint();
+                    Color oc = Helpers.newColor(t[0], t[1], t[2], 255);
+                    DrawModelEx(forest.rockBlockModel,
+                        Helpers.newVector3(o.x, o.y, o.z),
+                        Helpers.newVector3(0, 1, 0), 0f,
+                        Helpers.newVector3(o.scale, o.scale * 0.7f, o.scale), oc);
+                }
+            }
+            // Obsidian portal obelisks
+            if (forest.obelisks != null && forest.rockBlockModel != null) {
+                for (toyz.builder.terrain.RavineGenerator.PortalObelisk p : forest.obelisks) {
+                    float dx = p.x - camPos.x(), dz = p.z - camPos.z();
+                    if (dx * dx + dz * dz > propDistSq * 1.5f) continue;
+                    Color obs = Helpers.newColor(20, 8, 35, 255);
+                    Color glow = p.active ? Helpers.newColor(120, 40, 200, 255) : obs;
+                    int h = (p.variant == 0) ? 6 : (p.variant == 1) ? 5 : 4;
+                    for (int i = 0; i < h; i++) {
+                        float sc = 0.7f - i * 0.04f;
+                        DrawModelEx(forest.rockBlockModel,
+                            Helpers.newVector3(p.x, p.y + 0.4f + i * 0.85f, p.z),
+                            Helpers.newVector3(0, 1, 0), i * 12f,
+                            Helpers.newVector3(sc, 0.9f, sc), i == h - 1 ? glow : obs);
+                    }
+                    // triple gate side pillars
+                    if (p.variant == 1) {
+                        for (float ox : new float[]{-2.2f, 2.2f}) {
+                            for (int i = 0; i < 4; i++) {
+                                DrawModelEx(forest.rockBlockModel,
+                                    Helpers.newVector3(p.x + ox, p.y + 0.4f + i * 0.85f, p.z),
+                                    Helpers.newVector3(0, 1, 0), 0f,
+                                    Helpers.newVector3(0.55f, 0.85f, 0.55f), obs);
+                            }
+                        }
+                    }
+                }
+            }
+
         }
 
         for (ForestTree tree : forest.trees) {

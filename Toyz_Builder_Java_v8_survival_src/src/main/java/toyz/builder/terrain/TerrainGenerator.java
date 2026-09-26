@@ -18,6 +18,9 @@ public final class TerrainGenerator {
         public List<StructureSite> bridgeSites = new ArrayList<>();
         public List<CaveGenerator.CaveMouth> caveMouths = new ArrayList<>();
         public List<SkyIslandGenerator.Island> skyIslands = new ArrayList<>();
+        public List<RavineGenerator.RavinePath> ravines = new ArrayList<>();
+        public List<RavineGenerator.OreNode> ores = new ArrayList<>();
+        public List<RavineGenerator.PortalObelisk> obelisks = new ArrayList<>();
         public Model mesh;
         public WaterMeshBuilder.WaterMeshes waterMeshes;
         public float oceanLevel;
@@ -37,6 +40,9 @@ public final class TerrainGenerator {
             if (strength != 1f) {
                 float base = LandformGenerator.baseHeight(x, z, config);
                 s.height = base; // LandformGenerator reads cfg; strength applied inside if we patch — keep base
+            }
+            if (ravines != null && !ravines.isEmpty()) {
+                s.height = RavineGenerator.carveHeight(x, z, s.height, ravines);
             }
             if (water != null) water.apply(s, config);
             float e = 0.75f;
@@ -74,6 +80,13 @@ public final class TerrainGenerator {
             // WaterGenerator already seeded; strength used in mesh width
         }
         w.oceanLevel = w.water.oceanLevel;
+        if (!cfg.nether) {
+            int rc = cfg.preset == WorldConfig.MapgenPreset.V7 ? 6
+                    : (cfg.preset == WorldConfig.MapgenPreset.V6 ? 5 : 3);
+            w.ravines = RavineGenerator.generateRavines(cfg, rc);
+            w.ores = RavineGenerator.scatterOres(cfg, w.ravines, 90);
+            w.obelisks = RavineGenerator.placeObelisks(cfg, 3 + (Math.abs(cfg.seed) % 3));
+        }
         w.structureSites = LandmarkPlacement.findSites(w, cfg.structures ? 12 : 0);
         w.bridgeSites = LandmarkPlacement.findBridgeCrossings(w, cfg.structures ? 8 : 0);
         w.caveMouths = CaveGenerator.findMouths(w, cfg.preset.ordinal() >= WorldConfig.MapgenPreset.V5.ordinal() ? 20 : 8);
@@ -102,6 +115,9 @@ public final class TerrainGenerator {
                 + " sites=" + w.structureSites.size()
                 + " bridges=" + w.bridgeSites.size()
                 + " caves=" + w.caveMouths.size()
+                + " ravines=" + (w.ravines != null ? w.ravines.size() : 0)
+                + " ores=" + (w.ores != null ? w.ores.size() : 0)
+                + " obelisks=" + (w.obelisks != null ? w.obelisks.size() : 0)
                 + " sky=" + w.skyIslands.size()
                 + " waterMesh=" + (w.waterMeshes != null
                     && (w.waterMeshes.ocean != null || w.waterMeshes.rivers != null)));

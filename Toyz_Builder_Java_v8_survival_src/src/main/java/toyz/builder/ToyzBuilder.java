@@ -481,6 +481,22 @@ public final class ToyzBuilder {
             // --- Movement (MCCE-style, relative to camYaw) ---
             if (!menuOpen) {
                 Player.update(player, forest, dt, hasController, 0, camYaw, !Survival.showCraft && !mapLoader.open);
+                // Obsidian obelisk → Nether (same seed + dimension salt)
+                if (!forest.nether && Terrain.checkObeliskPortal(
+                        forest, player.position.x(), player.position.y(), player.position.z(), 2.8f)) {
+                    int netherSeed = forest.seed ^ 0x4E455448; // NETH
+                    Terrain.pendingNether = true;
+                    Terrain.pendingSkyIslands = false;
+                    forest = Terrain.generateForestTerrain(netherSeed, Terrain.WorldType.NETHER, true);
+                    player = Player.init(forest);
+                    placedPieces.clear();
+                    try {
+                        MapSystem.StructureSettings sc = new MapSystem.StructureSettings();
+                        sc.enabled = true;
+                        placedPieces.addAll(MapSystem.generateStructures(forest, sc));
+                    } catch (Throwable ignored) {}
+                    System.out.println("[Portal] Entered Nether via obelisk seed=" + netherSeed);
+                }
                 if (gameMode.isSurvival() && Survival.enabled) {
                     Survival.update(player, forest, dt);
                     if (!menuOpen && !Survival.showCraft && !Survival.inv.isOpen
