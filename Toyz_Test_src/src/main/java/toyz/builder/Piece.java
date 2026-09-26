@@ -32,7 +32,10 @@ public final class Piece {
         BlockIce, BlockSnow, BlockCopper, BlockIron, BlockTitanium,
         BlockCrystal, BlockDiamond, BlockQuartz, BlockConcrete,
         BlockMagma, BlockDirt, BlockGrass, BlockMagnecite,
-        MetalCage, FloorPlank
+        MetalCage, FloorPlank,
+        // Erector Set (append only — ordinals for map save)
+        ErectorBarH, ErectorBarV, ErectorBracket, ErectorLightBulb,
+        ErectorPulley, ErectorSlide, ErectorSwitch, ErectorCircuitBoard
     }
 
     public enum PieceColor {
@@ -1073,6 +1076,93 @@ public final class Piece {
         }
 
         System.out.println("[Piece] defs=" + defs.size() + " (incl. material expansion)");
+
+        // ---- Erector Set (metal bars, brackets, devices) ----
+        // category 6; rainbow metal finishes
+        PieceColor[] erectorMetals = {
+            PieceColor.Steel, PieceColor.Iron, PieceColor.Titanium,
+            PieceColor.Red, PieceColor.Blue, PieceColor.Yellow, PieceColor.Green
+        };
+        String[] metalNames = { "Steel", "Iron", "Titanium", "Red", "Blue", "Yellow", "Green" };
+        for (int mi = 0; mi < erectorMetals.length; mi++) {
+            PieceColor mc = erectorMetals[mi];
+            String metal = metalNames[mi];
+            Color tint = getColorFromEnum(mc);
+
+            d = new PieceDef();
+            d.type = PieceType.ErectorBarH; d.name = "Erector Bar H (" + metal + ")";
+            d.category = 6; d.defaultColor = mc; d.orient = PieceOrient.HORIZ;
+            d.model = makeCubeModel(1.6f, 0.08f, 0.12f, texMetal, tint);
+            d.icon = renderIcon(d.model, tint, 128);
+            d.halfExtents = Helpers.newVector3(0.8f, 0.04f, 0.06f);
+            addSnapsEndsX(d, 0.8f);
+            defs.add(d);
+
+            d = new PieceDef();
+            d.type = PieceType.ErectorBarV; d.name = "Erector Bar V (" + metal + ")";
+            d.category = 6; d.defaultColor = mc; d.orient = PieceOrient.VERT;
+            d.model = makeCubeModel(0.12f, 1.6f, 0.08f, texMetal, tint);
+            d.icon = renderIcon(d.model, tint, 128);
+            d.halfExtents = Helpers.newVector3(0.06f, 0.8f, 0.04f);
+            addSnapsEndsY(d, 0.8f);
+            defs.add(d);
+        }
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorBracket; d.name = "Erector Bracket";
+        d.category = 6; d.defaultColor = PieceColor.Steel;
+        d.model = makeCubeModel(0.5f, 0.12f, 0.5f, texMetal, getColorFromEnum(PieceColor.Steel));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Steel), 128);
+        d.halfExtents = Helpers.newVector3(0.25f, 0.06f, 0.25f);
+        addSnapsEndsY(d, 0.06f); addSnapsEndsX(d, 0.25f); addSnapsEndsZ(d, 0.25f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorLightBulb; d.name = "Erector Light Bulb";
+        d.category = 6; d.defaultColor = PieceColor.Yellow; d.hasLight = true;
+        d.model = makeCubeModel(0.35f, 0.45f, 0.35f, texMetal, Helpers.newColor(255, 240, 160, 255));
+        d.icon = renderIcon(d.model, Helpers.newColor(255, 240, 160, 255), 128);
+        d.halfExtents = Helpers.newVector3(0.18f, 0.22f, 0.18f);
+        addSnapsEndsY(d, 0.22f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorPulley; d.name = "Erector Pulley";
+        d.category = 6; d.defaultColor = PieceColor.Iron; d.isDynamic = true;
+        d.model = makeCubeModel(0.5f, 0.2f, 0.5f, texMetal, getColorFromEnum(PieceColor.Iron));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Iron), 128);
+        d.halfExtents = Helpers.newVector3(0.25f, 0.1f, 0.25f);
+        addSnapsEndsY(d, 0.1f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorSlide; d.name = "Erector Slide";
+        d.category = 6; d.defaultColor = PieceColor.Steel; d.orient = PieceOrient.ANGLE;
+        d.model = makeCubeModel(2.0f, 0.1f, 0.6f, texMetal, getColorFromEnum(PieceColor.Steel));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Steel), 128);
+        d.halfExtents = Helpers.newVector3(1.0f, 0.05f, 0.3f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorSwitch; d.name = "Erector Switch";
+        d.category = 6; d.defaultColor = PieceColor.Red;
+        d.model = makeCubeModel(0.3f, 0.25f, 0.2f, texMetal, getColorFromEnum(PieceColor.Red));
+        d.icon = renderIcon(d.model, getColorFromEnum(PieceColor.Red), 128);
+        d.halfExtents = Helpers.newVector3(0.15f, 0.12f, 0.1f);
+        addSnapsEndsY(d, 0.12f);
+        defs.add(d);
+
+        d = new PieceDef();
+        d.type = PieceType.ErectorCircuitBoard; d.name = "Erector Circuit Board";
+        d.category = 6; d.defaultColor = PieceColor.Green;
+        d.model = makeCubeModel(0.8f, 0.06f, 0.5f, texMetal, Helpers.newColor(40, 120, 55, 255));
+        d.icon = renderIcon(d.model, Helpers.newColor(40, 120, 55, 255), 128);
+        d.halfExtents = Helpers.newVector3(0.4f, 0.03f, 0.25f);
+        addSnapsEndsY(d, 0.03f);
+        defs.add(d);
+
+        System.out.println("[Piece] Erector set added — total defs=" + defs.size());
+
         return defs;
     }
 

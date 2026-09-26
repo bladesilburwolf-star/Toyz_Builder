@@ -59,7 +59,14 @@ public final class Hotbar {
                 return 4;
             case Ramp: case TeeterTotter: case Boulder: case Slide:
             case BlockWood: case BlockStone: case BlockMetal: case BlockSand: case BlockGlass:
+            case BlockIce: case BlockSnow: case BlockCopper: case BlockIron: case BlockTitanium:
+            case BlockCrystal: case BlockDiamond: case BlockQuartz: case BlockConcrete:
+            case BlockMagma: case BlockDirt: case BlockGrass: case BlockMagnecite:
+            case MetalCage: case FloorPlank:
                 return 5;
+            case ErectorBarH: case ErectorBarV: case ErectorBracket: case ErectorLightBulb:
+            case ErectorPulley: case ErectorSlide: case ErectorSwitch: case ErectorCircuitBoard:
+                return 6;
             default:
                 return 0;
         }
@@ -72,6 +79,7 @@ public final class Hotbar {
             case 3: return "Tech";
             case 4: return "Lolo";
             case 5: return "Misc";
+            case 6: return "Erector";
             default: return "All";
         }
     }
@@ -172,9 +180,9 @@ public final class Hotbar {
         }
         y += 34;
 
-        // Category tabs (All + 5)
-        float tabW = 100f;
-        for (int c = 0; c <= 5; c++) {
+        // Category tabs (All + Lincoln..Erector)
+        float tabW = 88f;
+        for (int c = 0; c <= 6; c++) {
             Rectangle tab = Helpers.newRectangle(x + c * (tabW + 4), y, tabW, 28);
             boolean active = state.filterCategory == c;
             if (UI.drawSteelButton(tab, categoryName(c), active)) {
