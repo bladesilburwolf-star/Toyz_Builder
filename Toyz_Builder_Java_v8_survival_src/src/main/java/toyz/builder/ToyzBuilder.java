@@ -123,6 +123,7 @@ public final class ToyzBuilder {
 
         while (!WindowShouldClose()) {
             float dt = GetFrameTime();
+			if (Terrain.warpCooldown > 0f) Terrain.warpCooldown -= dt;
             if (saveStatusTimer > 0f) saveStatusTimer -= dt;
 			worldTime += dt;
             boolean hasController = IsGamepadAvailable(0);
@@ -173,7 +174,8 @@ public final class ToyzBuilder {
                             sc.globalScale = wt == Terrain.WorldType.AMPLIFIED ? 1.15f : 1.0f;
                             List<Piece.PlacedPiece> generated = MapSystem.generateStructures(forest, sc);
                             m.pieces.addAll(generated);
-                            placedPieces.addAll(generated);
+                            registerDoorPortals(forest, generated, forest.nether);
+							
                         }
                         player = Player.init(forest);
                         titleMenu.showWorldMenu = false;
@@ -482,7 +484,8 @@ public final class ToyzBuilder {
 
             // --- Movement (MCCE-style, relative to camYaw) ---
             if (!menuOpen) {
-                Player.update(player, forest, dt, hasController, 0, camYaw, !Survival.showCraft && !mapLoader.open);
+                Player.update(player, forest, placedPieces, pieceDefs, dt, hasController, 0,
+              camYaw, !Survival.showCraft && !mapLoader.open);
                 // Loading zones — cooldown prevents instant bounce-back
                 if (Terrain.warpCooldown <= 0f) {
                     toyz.builder.terrain.ZonePortal zp = Terrain.checkZonePortal(
