@@ -52,8 +52,8 @@ public final class MapSystem {
     public static class StructureSettings {
         public boolean enabled = true;
         public float globalScale = 1.0f;
-        public int maxStructures = 9;
-        public float minSpacing = 55f;
+        public int maxStructures = 14;
+        public float minSpacing = 48f;
         public float villageChance = 0.55f;
         public float houseScaleMin = 0.85f;
         public float houseScaleMax = 1.45f;

@@ -44,14 +44,16 @@ public final class RavineGenerator {
             r.enormous = Noise.hash2D(i, 9, seed) > 0.88f;
             r.width = r.enormous ? 14f + Noise.hash2D(i, 1, seed) * 12f
                     : 5f + Noise.hash2D(i, 1, seed) * 8f;
-            r.depth = r.enormous ? 18f + Noise.hash2D(i, 2, seed) * 14f
-                    : 8f + Noise.hash2D(i, 2, seed) * 10f;
+            r.depth = r.enormous ? 14f + Noise.hash2D(i, 2, seed) * 10f
+                    : 6f + Noise.hash2D(i, 2, seed) * 8f;
             int segs = r.enormous ? 28 : 14 + (int)(Noise.hash2D(i, 3, seed) * 10);
             r.xs = new float[segs];
             r.zs = new float[segs];
             float ang = Noise.hash2D(i, 4, seed) * 6.2831853f;
-            float x = (Noise.hash2D(i, 5, seed) - 0.5f) * cfg.size * 0.7f;
-            float z = (Noise.hash2D(i, 6, seed) - 0.5f) * cfg.size * 0.7f;
+            // Cap placement span so huge Phase B worlds still get local ravines
+            float span = Math.min(cfg.size * 0.7f, 900f);
+            float x = (Noise.hash2D(i, 5, seed) - 0.5f) * span;
+            float z = (Noise.hash2D(i, 6, seed) - 0.5f) * span;
             float step = r.enormous ? 9f : 7f;
             for (int s = 0; s < segs; s++) {
                 r.xs[s] = x;

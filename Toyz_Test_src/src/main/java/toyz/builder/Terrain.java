@@ -163,7 +163,7 @@ public final class Terrain {
         }
     }
 
-    public enum WorldType { FLAT, NORMAL, AMPLIFIED, NETHER, INDOOR, CAVE, FOREST, DESERT, CORAL, SKY, INDUSTRIAL }
+    public enum WorldType { FLAT, NORMAL, AMPLIFIED, NETHER, INDOOR, CAVE, FOREST, DESERT, CORAL, SKY, INDUSTRIAL, DUNGEON }
 
     public static class WorldConfig {
         public WorldType type = WorldType.NORMAL;
@@ -204,7 +204,7 @@ public final class Terrain {
         public List<Biome> biomes = new ArrayList<>();
         public float size = 400f;
         public float cellSize = 4.0f;
-        public float heightScale = 16f;
+        public float heightScale = 24f;
         /** Phase B chunk streaming */
         public boolean useChunks = false;
         public toyz.builder.terrain.ChunkSystem.Manager chunks;
@@ -215,6 +215,7 @@ public final class Terrain {
         public boolean nether = false;
         public boolean indoor = false;
         public boolean caveWorld = false;
+        public boolean dungeonWorld = false;
         public java.util.List<toyz.builder.terrain.ZonePortal> zonePortals =
             new java.util.ArrayList<>();
         public java.util.List<WarpPipe> warpPipes = new java.util.ArrayList<>();
@@ -569,6 +570,9 @@ public final class Terrain {
     }
 
     public static String biomeNameAt(ForestTerrain forest, float x, float z) {
+        if (forest != null && (forest.dungeonWorld || forest.worldType == WorldType.DUNGEON))
+            return "Dungeon Tombs";
+
         if (forest != null && forest.v2 != null) {
             try {
                 return toyz.builder.terrain.TerrainGenerator.getBiome(forest.v2, x, z).displayName();
@@ -586,7 +590,9 @@ public final class Terrain {
     private static float heightAt(float x, float z, float size, float heightScale, int seed) {
         if (activeV2 != null)
             return toyz.builder.terrain.TerrainGenerator.getHeight(activeV2, x, z);
-        float nx = x / size, nz = z / size;
+        // Feature wavelengths in world units — never collapse on large Phase B maps
+        float featureSize = Math.min(size, 480f);
+        float nx = x / featureSize, nz = z / featureSize;
         if (activeWorldType == WorldType.FLAT) {
             float detailFlat = fractalNoise(nx * 10f + 7f, nz * 10f - 3f, seed + 901);
             return 1.8f + detailFlat * 0.18f;
@@ -724,6 +730,7 @@ public final class Terrain {
         toyz.builder.terrain.ZonePortal p = new toyz.builder.terrain.ZonePortal(x, y, z, target, salt);
         p.name = name != null ? name : target.name();
         if (target == toyz.builder.terrain.ZonePortal.Target.CAVE) p.radius = 3.2f;
+        if (target == toyz.builder.terrain.ZonePortal.Target.DUNGEON) p.radius = 2.4f;
         if (target == toyz.builder.terrain.ZonePortal.Target.INDOOR) p.radius = 2.2f;
         forest.zonePortals.add(p);
     }
@@ -774,21 +781,32 @@ public final class Terrain {
             forest.size = 160f;
             forest.heightScale = 10f;
             forest.magnetix = true;
+        } else if (forest.worldType == WorldType.DUNGEON) {
+            forest.size = 220f;
+            forest.heightScale = 8f;
+            forest.dungeonWorld = true;
+            forest.useChunks = false;
         } else {
             // Phase B overworld — large continuous world, chunked mesh
             forest.size = toyz.builder.terrain.ChunkSystem.settings.worldHalfSize * 2f;
             forest.heightScale = 16f;
             forest.useChunks = true;
+            if (forest.heightScale < 20f) forest.heightScale = 24f;
         }
         // Dimension overrides keep small size / no chunks
         if (forest.worldType == WorldType.INDOOR || forest.worldType == WorldType.CAVE
                 || forest.worldType == WorldType.NETHER || forest.worldType == WorldType.SKY
                 || forest.worldType == WorldType.CORAL || forest.worldType == WorldType.INDUSTRIAL
-                || forest.worldType == WorldType.FOREST || forest.worldType == WorldType.DESERT) {
+                || forest.worldType == WorldType.FOREST || forest.worldType == WorldType.DESERT
+                || forest.worldType == WorldType.DUNGEON) {
             forest.useChunks = false;
         }
-        if (forest.worldType == WorldType.FOREST) { forest.size = 640f; forest.heightScale = 16f; }
-        if (forest.worldType == WorldType.DESERT) { forest.size = 640f; forest.heightScale = 12f; }
+        if (forest.worldType == WorldType.FOREST) { forest.size = 640f; forest.heightScale = 22f; }
+        if (forest.worldType == WorldType.DESERT) { forest.size = 640f; forest.heightScale = 14f; }
+        if (forest.worldType == WorldType.AMPLIFIED) { forest.heightScale = Math.max(forest.heightScale, 36f); }
+        if (forest.worldType == WorldType.NORMAL || forest.worldType == WorldType.FLAT) {
+            if (forest.worldType == WorldType.NORMAL && forest.heightScale < 22f) forest.heightScale = 24f;
+        }
         forest.cellSize = toyz.builder.terrain.ChunkSystem.settings.cellSize;
         if (!forest.useChunks && forest.size < 100f) forest.cellSize = 4.0f;
         forest.waterLevel = forest.heightScale * WATER_LEVEL_FRAC;
@@ -817,8 +835,10 @@ public final class Terrain {
                 v2cfg.forceTheme = "SKY";
                 v2cfg.skyIslands = true;
             } else if (forest.worldType == WorldType.INDUSTRIAL) v2cfg.forceTheme = "INDUSTRIAL";
+            else if (forest.worldType == WorldType.DUNGEON) v2cfg.forceTheme = "DUNGEON";
             forest.indoor = forest.worldType == WorldType.INDOOR;
             forest.caveWorld = forest.worldType == WorldType.CAVE;
+            forest.dungeonWorld = forest.worldType == WorldType.DUNGEON;
             // Themed zones force climate later via pendingTheme
             v2cfg.applyPresetTuning();
             if (v2cfg.nether) v2cfg.applyNether();
@@ -1174,9 +1194,9 @@ public final class Terrain {
                 .color(Helpers.newColor(255, 90, 20, 255));
         }
 
-        // ---- trees (clustered by biome; none in desert/beach/nether) ----
-        if (forest.nether) {
-            System.out.println("[Terrain] Nether — skipping overworld trees");
+        // ---- trees ----
+        if (forest.nether || forest.dungeonWorld || forest.worldType == WorldType.DUNGEON) {
+            System.out.println("[Terrain] skip trees nether/dungeon");
         }
         final float spacing = 9.0f;
         float treeArea = forest.size * 0.47f;
@@ -1186,7 +1206,7 @@ public final class Terrain {
                 float jitterZ = (hash2D((int) (zPos * 10), (int) (xPos * 10), seed + 77) - 0.5f) * 5f;
                 float px = xPos + jitterX;
                 float pz = zPos + jitterZ;
-                if (forest.nether) continue;
+                if (forest.nether || forest.dungeonWorld || forest.worldType == WorldType.DUNGEON) continue; // no canopy
                 if (px * px + pz * pz < 20f * 20f) continue; // spawn bowl
                 if (riverInfluence(px / forest.size, pz / forest.size, seed) > 0.4f) continue;
 

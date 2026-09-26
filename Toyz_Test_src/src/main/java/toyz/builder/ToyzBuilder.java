@@ -103,6 +103,7 @@ public final class ToyzBuilder {
         GameSettings settings = new GameSettings();
         settings.applyChunkSettings();
         UI.PauseMenuState pauseMenu = new UI.PauseMenuState();
+        WorldMap.State worldMap = new WorldMap.State();
         UI.TitleMenuState titleMenu = new UI.TitleMenuState();
         UI.MapLoaderState mapLoader = new UI.MapLoaderState();
         AppState appState = AppState.Title;
@@ -193,7 +194,7 @@ public final class ToyzBuilder {
             boolean hasController = IsGamepadAvailable(0);
 			if (settings.modWeather) {
 				Weather.update(dt, camera._position());
-				if (IsKeyPressed(KEY_M)) Weather.cycle();
+				if (IsKeyPressed(KEY_N)) Weather.cycle(); // N = next weather (M = map)
 			}
             if (IsKeyPressed(KEY_F11) || (IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER))) {
                 settings.fullscreen = !settings.fullscreen;
@@ -237,9 +238,15 @@ public final class ToyzBuilder {
                             MapSystem.StructureSettings sc = new MapSystem.StructureSettings();
                             sc.enabled = titleMenu.structures;
                             sc.globalScale = wt == Terrain.WorldType.AMPLIFIED ? 1.15f : 1.0f;
-                            List<Piece.PlacedPiece> generated = MapSystem.generateStructures(forest, sc);
+                            StructureGenerator.Result sr = StructureGenerator.generateFromSites(forest, sc);
+                            if (sr == null || sr.pieces.isEmpty())
+                                sr = StructureGenerator.generate(forest, sc);
+                            List<Piece.PlacedPiece> generated = sr.pieces;
                             m.pieces.addAll(generated);
+                            placedPieces.clear();
+                            placedPieces.addAll(generated);
                             registerDoorPortals(forest, generated, forest.nether);
+                            rebuildMapMarkers(worldMap, forest, sr);
 							
                         }
                         player = Player.init(forest);
@@ -422,8 +429,17 @@ public final class ToyzBuilder {
                     }
                 }
             }
+            // M = world map (not weather while map system active)
+            if (IsKeyPressed(KEY_M) && !pauseMenu.open && !inventory.isOpen) {
+                worldMap.fullMapOpen = !worldMap.fullMapOpen;
+                if (worldMap.fullMapOpen) EnableCursor();
+                else DisableCursor();
+            }
             if (IsKeyPressed(KEY_ESCAPE)) {
-                if (isPlacing && !pauseMenu.open && !inventory.isOpen) {
+                if (worldMap.fullMapOpen) {
+                    worldMap.fullMapOpen = false;
+                    DisableCursor();
+                } else if (isPlacing && !pauseMenu.open && !inventory.isOpen) {
                     hotbar.setSlot(hotbar.selected, -1);
                     isPlacing = false;
                 } else if (gameMode.isSurvival() && Survival.inv.isOpen) {
@@ -442,7 +458,7 @@ public final class ToyzBuilder {
                     if (pauseMenu.open) EnableCursor(); else DisableCursor();
                 }
             }
-            boolean menuOpen = inventory.isOpen || pauseMenu.open
+            boolean menuOpen = inventory.isOpen || pauseMenu.open || worldMap.fullMapOpen
                 || (gameMode.isSurvival() && (Survival.inv.isOpen || Survival.showCraft));
             // Survival craft toggle
             if (gameMode.isSurvival() && Survival.enabled && IsKeyPressed(KEY_C)
@@ -582,11 +598,13 @@ public final class ToyzBuilder {
                         zp.active = false;
                         // Remember overworld seed when leaving it
                         if (!forest.nether && !forest.indoor && !forest.caveWorld
+                                && !forest.dungeonWorld
                                 && forest.worldType != Terrain.WorldType.FOREST
                                 && forest.worldType != Terrain.WorldType.DESERT
                                 && forest.worldType != Terrain.WorldType.CORAL
                                 && forest.worldType != Terrain.WorldType.SKY
-                                && forest.worldType != Terrain.WorldType.INDUSTRIAL) {
+                                && forest.worldType != Terrain.WorldType.INDUSTRIAL
+                                && forest.worldType != Terrain.WorldType.DUNGEON) {
                             Terrain.homeSeed = forest.seed;
                         }
                         Terrain.WorldType dest;
@@ -607,6 +625,10 @@ public final class ToyzBuilder {
                             case CAVE:
                                 dest = Terrain.WorldType.CAVE;
                                 destSeed = Terrain.homeSeed ^ 0x43415645 ^ zp.salt;
+                                break;
+                            case DUNGEON:
+                                dest = Terrain.WorldType.DUNGEON;
+                                destSeed = Terrain.homeSeed ^ 0x44554E47 ^ zp.salt;
                                 break;
                             case FOREST:
                                 dest = Terrain.WorldType.FOREST;
@@ -652,9 +674,13 @@ public final class ToyzBuilder {
                             } else {
                                 MapSystem.StructureSettings sc = new MapSystem.StructureSettings();
                                 sc.enabled = true;
-                                List<Piece.PlacedPiece> gen = MapSystem.generateStructures(forest, sc);
+                                StructureGenerator.Result sr = StructureGenerator.generateFromSites(forest, sc);
+                                if (sr == null || sr.pieces.isEmpty())
+                                    sr = StructureGenerator.generate(forest, sc);
+                                List<Piece.PlacedPiece> gen = sr.pieces;
                                 placedPieces.addAll(gen);
                                 registerDoorPortals(forest, gen, forest.nether);
+                                rebuildMapMarkers(worldMap, forest, sr);
                             }
                         } catch (Throwable ex) {
                             System.err.println("[Zone] structure fail: " + ex.getMessage());
@@ -940,6 +966,9 @@ public final class ToyzBuilder {
             int si = Math.max(0, Math.min(4, settings.skyboxIndex));
             // sky tint for nether handled below
             if (forest != null && forest.nether)
+                if (forest != null && forest.dungeonWorld)
+                ClearBackground(Helpers.newColor(12, 10, 14, 255));
+            else
                 ClearBackground(Helpers.newColor(45, 12, 10, 255));
             else if (forest != null && forest.caveWorld)
                 ClearBackground(Helpers.newColor(8, 8, 12, 255));
@@ -1024,6 +1053,18 @@ public final class ToyzBuilder {
             } else {
                 // Creative / builder HUD
                 DrawText("MODE  CREATIVE", 18, 12, 12, UI.phosphor());
+                WorldMap.drawMinimap(worldMap, forest, player, camYaw);
+                WorldMap.update(worldMap, dt);
+                if (worldMap.fullMapOpen) {
+                    float[] ft = new float[2];
+                    if (WorldMap.drawFullMap(worldMap, forest, player, ft)) {
+                        float gy = Terrain.getTerrainHeight(forest, ft[0], ft[1]);
+                        player.position.x(ft[0]).z(ft[1]).y(gy + player.radius + 0.2f);
+                        player.velocity.x(0).y(0).z(0);
+                        DisableCursor();
+                        System.out.println("[WorldMap] fast travel → " + ft[0] + "," + ft[1]);
+                    }
+                }
                 Hotbar.drawHotbar(hotbar, pieceDefs);
                 if (inventory.isOpen && !pauseMenu.open) {
                     Hotbar.updateFullInventory(inventory, hotbar, pieceDefs);
@@ -1199,6 +1240,25 @@ public final class ToyzBuilder {
     }
 
 
+
+
+    private static void tagMarkersFromPieces(WorldMap.State worldMap, List<Piece.PlacedPiece> pieces) {
+        if (worldMap == null || pieces == null) return;
+        for (Piece.PlacedPiece pp : pieces) {
+            if (pp == null) continue;
+            if (pp.type == Piece.PieceType.Door && pp.color == Piece.PieceColor.Black)
+                WorldMap.addMarker(worldMap, "Tomb", WorldMap.MarkerKind.TOMB, pp.position.x(), pp.position.z());
+        }
+    }
+
+    private static void rebuildMapMarkers(WorldMap.State worldMap, Terrain.ForestTerrain forest,
+                                          StructureGenerator.Result sr) {
+        WorldMap.clear(worldMap);
+        if (sr != null) WorldMap.registerFromResult(worldMap, sr);
+        WorldMap.registerObelisks(worldMap, forest);
+        System.out.println("[WorldMap] markers=" + worldMap.markers.size());
+    }
+
     private static void registerDoorPortals(Terrain.ForestTerrain forest,
                                             List<Piece.PlacedPiece> pieces, boolean netherWorld) {
         if (forest == null || pieces == null) return;
@@ -1206,11 +1266,24 @@ public final class ToyzBuilder {
         for (Piece.PlacedPiece pp : pieces) {
             if (pp == null || pp.type != Piece.PieceType.Door) continue;
             float dx = pp.position.x(), dy = pp.position.y(), dz = pp.position.z();
-            toyz.builder.terrain.ZonePortal.Target tgt = netherWorld
-                    ? toyz.builder.terrain.ZonePortal.Target.OVERWORLD
-                    : toyz.builder.terrain.ZonePortal.Target.INDOOR;
+            boolean blackDoor = pp.color == Piece.PieceColor.Black;
+            toyz.builder.terrain.ZonePortal.Target tgt;
+            String name;
+            if (forest.dungeonWorld || forest.worldType == Terrain.WorldType.DUNGEON) {
+                tgt = toyz.builder.terrain.ZonePortal.Target.OVERWORLD;
+                name = "Tomb Exit";
+            } else if (netherWorld) {
+                tgt = toyz.builder.terrain.ZonePortal.Target.OVERWORLD;
+                name = "Nether Door";
+            } else if (blackDoor) {
+                tgt = toyz.builder.terrain.ZonePortal.Target.DUNGEON;
+                name = "Dungeon Tomb";
+            } else {
+                tgt = toyz.builder.terrain.ZonePortal.Target.INDOOR;
+                name = "Door";
+            }
             Terrain.addZonePortal(forest, dx, dy, dz, tgt,
-                    (int)(dx * 31 + dz * 17 + i), netherWorld ? "Nether Door" : "Door");
+                    (int)(dx * 31 + dz * 17 + i), name);
             i++;
         }
         System.out.println("[Zone] door portals registered=" + i);

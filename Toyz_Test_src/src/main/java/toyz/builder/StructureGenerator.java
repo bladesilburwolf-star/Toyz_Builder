@@ -16,6 +16,11 @@ public final class StructureGenerator {
     public static final class Result {
         public final List<Piece.PlacedPiece> pieces = new ArrayList<>();
         public final List<Mob.Spawner> spawners = new ArrayList<>();
+        public final List<WorldMap.Marker> markers = new ArrayList<>();
+    }
+
+    private static void mark(Result r, String name, WorldMap.MarkerKind kind, float x, float z) {
+        r.markers.add(new WorldMap.Marker(name, kind, x, z));
     }
 
     private static float hash(int a, int b, int seed) {
@@ -99,6 +104,123 @@ public final class StructureGenerator {
         addSpawner(r, cx, cz, ground, Mob.Kind.NEEDLEKIN, -half - 3f, 0, 10f, 2);
     }
 
+
+    /**
+     * Large tomb / dungeon entrance — vertical concrete rectangle, stone ramp roof,
+     * black door (warp to Dungeon world). Fewer than trees: sparse placement.
+     */
+
+    /** Climate-aware town: a few houses + plaza marker. */
+    private static void addTown(Result r, float cx, float cz, float ground, float scale, int seed, int biome) {
+        boolean desert = biome == Terrain.BIOME_DESERT || biome == Terrain.BIOME_BEACH
+                || biome == Terrain.BIOME_BADLANDS || biome == Terrain.BIOME_MESA;
+        boolean snow = biome == Terrain.BIOME_SNOW || biome == Terrain.BIOME_TAIGA
+                || biome == Terrain.BIOME_ALPINE || biome == Terrain.BIOME_FROZEN_LAKE;
+        boolean swamp = biome == Terrain.BIOME_SWAMP || biome == Terrain.BIOME_MANGROVE;
+        Piece.PieceType wall = desert ? Piece.PieceType.BlockSand
+                : snow ? Piece.PieceType.BlockStone
+                : swamp ? Piece.PieceType.BlockWood
+                : Piece.PieceType.BlockWood;
+        Piece.PieceColor wood = snow ? Piece.PieceColor.Pine
+                : desert ? Piece.PieceColor.Oak
+                : swamp ? Piece.PieceColor.Walnut
+                : Piece.PieceColor.Oak;
+        String townName = desert ? "Desert Hamlet" : snow ? "Snow Town" : swamp ? "Swamp Village" : "Village";
+        int houses = 3 + (int)(hash(seed, 3, seed) * 3);
+        for (int i = 0; i < houses; i++) {
+            float ang = hash(i, 11, seed) * 6.2831853f;
+            float dist = 6f + hash(i, 13, seed) * 10f * scale;
+            float hx = cx + (float) Math.cos(ang) * dist;
+            float hz = cz + (float) Math.sin(ang) * dist;
+            int half = Math.max(2, Math.round(2 * scale));
+            int h = Math.max(2, Math.round(2.5f * scale));
+            addBlockWall(r.pieces, hx, hz, ground, half, h, wall, wood);
+            r.pieces.add(piece(Piece.PieceType.Roof, hx, ground + h + 0.5f, hz, 0,
+                    desert ? Piece.PieceColor.Yellow : Piece.PieceColor.Red));
+            if (hash(i, 17, seed) > 0.45f) {
+                r.pieces.add(piece(Piece.PieceType.Door, hx, ground + 0.9f, hz - half - 0.1f, 0, wood));
+            }
+        }
+        // plaza center marker
+        r.pieces.add(piece(Piece.PieceType.Sign, cx, ground + 1.2f, cz, 0, Piece.PieceColor.Pine));
+        mark(r, townName, WorldMap.MarkerKind.TOWN, cx, cz);
+    }
+
+    /** Small shrine — pillar + roof peak, not a full tomb. */
+    private static void addShrine(Result r, float cx, float cz, float ground, float scale, int seed) {
+        int h = Math.max(3, Math.round(4 * scale));
+        for (int y = 0; y < h; y++) {
+            r.pieces.add(piece(Piece.PieceType.BlockStone, cx - 1, ground + 0.5f + y, cz, 0, Piece.PieceColor.Natural));
+            r.pieces.add(piece(Piece.PieceType.BlockStone, cx + 1, ground + 0.5f + y, cz, 0, Piece.PieceColor.Natural));
+            r.pieces.add(piece(Piece.PieceType.BlockStone, cx, ground + 0.5f + y, cz - 1, 0, Piece.PieceColor.Natural));
+            r.pieces.add(piece(Piece.PieceType.BlockStone, cx, ground + 0.5f + y, cz + 1, 0, Piece.PieceColor.Natural));
+        }
+        r.pieces.add(piece(Piece.PieceType.RoofPeak, cx, ground + h + 0.6f, cz, 0, Piece.PieceColor.Natural));
+        r.pieces.add(piece(Piece.PieceType.FabricFlag, cx, ground + h + 1.4f, cz, 0, Piece.PieceColor.White));
+        mark(r, "Shrine", WorldMap.MarkerKind.SHRINE, cx, cz);
+    }
+
+    private static void addDungeonTomb(Result r, float cx, float cz, float ground, float scale, int seed) {
+        // Tall box footprint ~5x5, height ~8-10 blocks
+        int half = Math.max(2, Math.round(2.2f * scale)); // wall half-extent in blocks
+        int height = Math.max(7, Math.round(8 * scale));
+        Piece.PieceType wall = Piece.PieceType.BlockConcrete;
+        // Prefer concrete; fallback path if missing uses BlockStone via piece types that exist
+        // BlockConcrete is in enum from material expansion
+        try {
+            // walls — solid vertical rectangle (no windows)
+            for (int y = 0; y < height; y++) {
+                float yy = ground + 0.5f + y;
+                for (int x = -half; x <= half; x++) {
+                    r.pieces.add(piece(wall, cx + x, yy, cz - half, 0, Piece.PieceColor.Natural));
+                    r.pieces.add(piece(wall, cx + x, yy, cz + half, 0, Piece.PieceColor.Natural));
+                }
+                for (int z = -half + 1; z < half; z++) {
+                    r.pieces.add(piece(wall, cx - half, yy, cz + z, 0, Piece.PieceColor.Natural));
+                    r.pieces.add(piece(wall, cx + half, yy, cz + z, 0, Piece.PieceColor.Natural));
+                }
+            }
+        } catch (Throwable t) {
+            wall = Piece.PieceType.BlockStone;
+            addBlockWall(r.pieces, cx, cz, ground, half, height, wall, Piece.PieceColor.Natural);
+        }
+        // Floor
+        for (int x = -half + 1; x < half; x++) {
+            for (int z = -half + 1; z < half; z++) {
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x, ground + 0.15f, cz + z, 0, Piece.PieceColor.Natural));
+            }
+        }
+        // Stone ramp roof — stepped pyramid / ramp slopes on four sides toward peak
+        float roofBase = ground + height + 0.15f;
+        int layers = half + 2;
+        for (int layer = 0; layer < layers; layer++) {
+            int rHalf = half + 1 - layer;
+            if (rHalf < 0) break;
+            float yy = roofBase + layer * 0.55f;
+            for (int x = -rHalf; x <= rHalf; x++) {
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x, yy, cz - rHalf, 0, Piece.PieceColor.Natural));
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx + x, yy, cz + rHalf, 0, Piece.PieceColor.Natural));
+            }
+            for (int z = -rHalf + 1; z < rHalf; z++) {
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx - rHalf, yy, cz + z, 0, Piece.PieceColor.Natural));
+                r.pieces.add(piece(Piece.PieceType.BlockStone, cx + rHalf, yy, cz + z, 0, Piece.PieceColor.Natural));
+            }
+            // ramp pieces on front slope for silhouette
+            if (layer < layers - 1) {
+                r.pieces.add(piece(Piece.PieceType.Roof, cx, yy + 0.2f, cz - rHalf - 0.4f, 0, Piece.PieceColor.Natural));
+                r.pieces.add(piece(Piece.PieceType.Roof, cx, yy + 0.2f, cz + rHalf + 0.4f, 180, Piece.PieceColor.Natural));
+            }
+        }
+        // Cap
+        r.pieces.add(piece(Piece.PieceType.RoofPeak, cx, roofBase + layers * 0.55f + 0.3f, cz, 0, Piece.PieceColor.Natural));
+        // BLACK door on south face — portal trigger registered later
+        float doorZ = cz - half - 0.15f;
+        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.95f, doorZ, 0, Piece.PieceColor.Black));
+        // Small marker sign
+        r.pieces.add(piece(Piece.PieceType.Sign, cx, ground + 1.85f, doorZ - 0.05f, 0, Piece.PieceColor.Black));
+        mark(r, "Tomb", WorldMap.MarkerKind.TOMB, cx, cz);
+    }
+
     private static void addTemple(Result r, float cx, float cz, float ground, float scale, int seed) {
         // Stone-block shell (rockblock/concrete GLB) — desert temples use sand blocks via addDesertTemple
         int radius = Math.max(3, Math.round(3 * scale));
@@ -138,6 +260,7 @@ public final class StructureGenerator {
                 seed % 3 == 0 ? Piece.PieceColor.Purple : Piece.PieceColor.White));
 
         addSpawner(r, cx, cz, ground, Mob.Kind.AHRIMAN, 0, 0, 11f, 2);
+        mark(r, "Temple", WorldMap.MarkerKind.TEMPLE, cx, cz);
     }
 
     private static void addMagnetixTemple(Result r, float cx, float cz, float ground,
@@ -372,6 +495,12 @@ public final class StructureGenerator {
                     addSwampHut(r, site.x, site.z, ground, sc, terrain.seed + n);
                 } else if (tundra) {
                     addTundraHut(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if ("town".equals(kind) || "village".equals(kind)) {
+                    addTown(r, site.x, site.z, ground, sc, terrain.seed + n, Terrain.biomeAt(terrain, site.x, site.z));
+                } else if ("shrine".equals(kind)) {
+                    addShrine(r, site.x, site.z, ground, sc, terrain.seed + n);
+                } else if ("tomb".equals(kind) || "dungeon".equals(kind)) {
+                    addDungeonTomb(r, site.x, site.z, ground, sc, terrain.seed + n);
                 } else if ("temple".equals(kind) || desert) {
                     if (desert) addDesertTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
                     else addTemple(r, site.x, site.z, ground, sc, terrain.seed + n);
@@ -385,10 +514,36 @@ public final class StructureGenerator {
             }
             if (n > 0) {
                 System.out.println("[Structures] placed " + n + " from V3 sites (block/GLB)");
+                scatterDungeonTombs(r, terrain, terrain.seed);
                 return r;
             }
         }
         return generate(terrain, cfg);
+    }
+
+
+    /** Place a few tomb entrances across the map — density much lower than trees. */
+    private static void scatterDungeonTombs(Result r, Terrain.ForestTerrain terrain, int seed) {
+        if (terrain == null) return;
+        boolean dungeonMap = terrain.dungeonWorld || terrain.worldType == Terrain.WorldType.DUNGEON;
+        // Overworld: ~3-5 tombs; dungeon dimension: denser cluster of tombs
+        int count = dungeonMap ? 8 + (Math.abs(seed) % 5) : 3 + (Math.abs(seed) % 3);
+        float area = Math.max(80f, terrain.size * 0.35f);
+        if (dungeonMap) area = Math.max(60f, terrain.size * 0.4f);
+        for (int i = 0; i < count; i++) {
+            float ang = hash(i, 101, seed) * 6.2831853f;
+            float dist = 25f + hash(i, 103, seed) * area;
+            float x = (float) Math.cos(ang) * dist;
+            float z = (float) Math.sin(ang) * dist;
+            // Keep one near origin on dungeon maps so player sees a tomb immediately
+            if (dungeonMap && i == 0) { x = 18f; z = 12f; }
+            float ground = Terrain.getTerrainHeight(terrain, x, z);
+            if (!dungeonMap && ground < terrain.waterLevel + 1.2f) continue;
+            float sc = dungeonMap ? 1.1f + hash(i, 107, seed) * 0.4f : 0.95f + hash(i, 107, seed) * 0.35f;
+            addDungeonTomb(r, x, z, ground, sc, seed + i * 17);
+        }
+        System.out.println("[Structure] dungeon tombs scattered count≈" + count
+                + " dungeonMap=" + dungeonMap);
     }
 
     public static Result generate(Terrain.ForestTerrain terrain,
@@ -415,19 +570,29 @@ public final class StructureGenerator {
             float roll = hash(i, 53, seed);
             boolean magnetix = hash(i, 67, seed) < cfg.magnetixChance;
 
-            if (roll < cfg.fortChance) {
+            if (roll < 0.18f) {
                 if (magnetix) addMagnetixFort(r, x, z, ground, localScale, seed + i);
                 else addFort(r, x, z, ground, localScale, seed + i);
-            } else if (roll < cfg.fortChance + cfg.templeChance) {
+                mark(r, "Fort", WorldMap.MarkerKind.FORT, x, z);
+            } else if (roll < 0.36f) {
                 if (magnetix) addMagnetixTemple(r, x, z, ground, localScale, seed + i);
                 else addTemple(r, x, z, ground, localScale, seed + i);
-            } else if (roll < cfg.fortChance + cfg.templeChance + cfg.bridgeChance) {
+            } else if (roll < 0.52f) {
+                int biome = Terrain.biomeAt(terrain, x, z);
+                addTown(r, x, z, ground, localScale, seed + i, biome);
+            } else if (roll < 0.66f) {
+                addShrine(r, x, z, ground, localScale, seed + i);
+            } else if (roll < 0.78f) {
+                addDungeonTomb(r, x, z, ground, localScale, seed + i);
+            } else if (roll < 0.90f) {
                 addBridge(r, x, z, ground, localScale, magnetix, seed + i);
+                mark(r, "Bridge", WorldMap.MarkerKind.BRIDGE, x, z);
             } else {
                 addTemple(r, x, z, ground, Math.max(0.7f, localScale * 0.8f), seed + i);
             }
             made++;
         }
+        scatterDungeonTombs(r, terrain, seed);
         return r;
     }
 }

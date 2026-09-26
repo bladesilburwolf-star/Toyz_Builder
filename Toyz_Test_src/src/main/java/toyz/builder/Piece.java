@@ -42,7 +42,7 @@ public final class Piece {
         Natural, Red, Green, Blue, Yellow, Purple, Orange, Pink, White,
         // wood stains / metal finishes (shown via name + tint)
         Pine, Oak, Cedar, Cherry, Walnut, Birch, Mahogany, Teak,
-        Steel, Iron, Titanium
+        Steel, Iron, Titanium, Black
     }
 
     public enum PieceLength { SHT, MED, LRG }
@@ -324,6 +324,7 @@ public final class Piece {
             case Mahogany: return Helpers.newColor(120, 50, 40, 255);
             case Teak: return Helpers.newColor(170, 130, 70, 255);
             case Steel: return Helpers.newColor(180, 185, 190, 255);
+            case Black: return Helpers.newColor(18, 18, 22, 255);
             case Iron: return Helpers.newColor(110, 110, 115, 255);
             case Titanium: return Helpers.newColor(200, 205, 210, 255);
             default: return Helpers.newColor(220, 200, 170, 255);

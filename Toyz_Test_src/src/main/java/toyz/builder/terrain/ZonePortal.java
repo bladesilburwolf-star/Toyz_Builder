@@ -7,6 +7,7 @@ public final class ZonePortal {
     public enum Target {
         OVERWORLD,
         NETHER,
+        DUNGEON,
         INDOOR,
         CAVE,
         FOREST,

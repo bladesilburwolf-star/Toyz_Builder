@@ -2,74 +2,102 @@ package toyz.builder.terrain;
 
 /**
  * Large-scale coherent landforms (not raw noise→height).
- * Continental mask + mountain ranges + plateaus + mesas + valleys.
+ * Wavelengths are in WORLD UNITS so huge Phase B maps still have hills/mountains
+ * near the player — never divide feature noise by cfg.size.
  */
 public final class LandformGenerator {
     private LandformGenerator() {}
+
+    /** Continent blob size (~units). Independent of world extent. */
+    private static final float CONT_SCALE = 420f;
+    /** Mountain range wavelength */
+    private static final float RANGE_SCALE = 180f;
+    /** Rolling hills */
+    private static final float HILL_SCALE = 64f;
+    /** Plateau / mesa / valley */
+    private static final float MACRO_SCALE = 110f;
+    private static final float DETAIL_SCALE = 18f;
 
     public static float baseHeight(float x, float z, WorldConfig cfg) {
         if (cfg.type == WorldConfig.WorldType.FLAT) {
             return Noise.fractal(x * 0.05f, z * 0.05f, cfg.seed + 1, 2) * cfg.heightScale * 0.15f;
         }
 
-        float size = cfg.size;
-        float nx = x / size;
-        float nz = z / size;
         int seed = cfg.seed;
-        float hs = cfg.heightScale;
+        float hs = Math.max(12f, cfg.heightScale);
 
-        // Continentalness: large blobs of land vs ocean shelf
-        float cont = Noise.fractal(nx * 1.2f + 2f, nz * 1.2f - 1.5f, seed + 11, 5);
-        cont = smoothstep(0.28f, 0.62f, cont);
+        // World-unit normalized coords (NOT / size)
+        float cx = x / CONT_SCALE;
+        float cz = z / CONT_SCALE;
+        float rx = x / RANGE_SCALE;
+        float rz = z / RANGE_SCALE;
+        float hx = x / HILL_SCALE;
+        float hz = z / HILL_SCALE;
+        float mx = x / MACRO_SCALE;
+        float mz = z / MACRO_SCALE;
+        float dx = x / DETAIL_SCALE;
+        float dz = z / DETAIL_SCALE;
 
-        // Mountain range: elongated ridged band
-        float rangeAxis = nx * 0.7f + nz * 0.3f;
-        float range = Noise.ridged(rangeAxis * 3.5f + 4f, nz * 1.2f - nx * 0.4f, seed + 333);
-        range = (float) Math.pow(range, 1.6f);
+        // Continentalness: land vs low shelf (still varies within a few hundred units)
+        float cont = Noise.fractal(cx * 1.15f + 2f, cz * 1.15f - 1.5f, seed + 11, 5);
+        cont = smoothstep(0.22f, 0.58f, cont);
 
-        // Foothills / hills
-        float hills = Noise.fractal(nx * 4.5f - 3f, nz * 4.5f + 2f, seed + 90, 4);
+        // Mountain ranges — ridged, strong
+        float rangeAxis = rx * 0.85f + rz * 0.35f;
+        float range = Noise.ridged(rangeAxis * 2.8f + 4f, rz * 1.4f - rx * 0.5f, seed + 333);
+        range = (float) Math.pow(Math.max(0f, range), 1.35f);
 
-        // Plateaus: flattened highs
-        float plate = Noise.fractal(nx * 2.0f + 8f, nz * 2.0f - 6f, seed + 1707, 3);
+        // Foothills / rolling hills
+        float hills = Noise.fractal(hx * 1.1f - 3f, hz * 1.1f + 2f, seed + 90, 4);
+
+        // Secondary hill band (breaks up flat mid-elevation)
+        float hills2 = Noise.fractal(hx * 2.3f + 5f, hz * 2.3f - 4f, seed + 191, 3);
+
+        // Plateaus
+        float plate = Noise.fractal(mx * 1.2f + 8f, mz * 1.2f - 6f, seed + 1707, 3);
         float plateau = 0f;
-        if (plate > 0.62f) {
-            plateau = smoothstep(0.62f, 0.78f, plate) * 0.55f;
+        if (plate > 0.58f) {
+            plateau = smoothstep(0.58f, 0.78f, plate) * 0.65f;
         }
 
-        // Mesas / badlands terraces (hot dry regions use later in biome)
-        float mesa = Noise.fractal(nx * 5f + 1f, nz * 5f + 9f, seed + 404, 3);
+        // Mesas / terraces
+        float mesa = Noise.fractal(mx * 1.6f + 1f, mz * 1.6f + 9f, seed + 404, 3);
         float mesaH = 0f;
-        if (mesa > 0.7f) {
-            mesaH = (float) Math.floor(smoothstep(0.7f, 0.9f, mesa) * 4f) / 4f * 0.35f;
+        if (mesa > 0.68f) {
+            mesaH = (float) Math.floor(smoothstep(0.68f, 0.9f, mesa) * 5f) / 5f * 0.45f;
         }
 
-        // Valleys: subtract along secondary axis
-        float valley = Noise.fractal(nx * 3.2f - 10f, nz * 3.2f + 4f, seed + 505, 3);
-        float valleyCut = smoothstep(0.55f, 0.85f, valley) * 0.25f;
+        // Valleys — deeper cuts
+        float valley = Noise.fractal(mx * 1.4f - 10f, mz * 1.4f + 4f, seed + 505, 3);
+        float valleyCut = smoothstep(0.5f, 0.82f, valley) * 0.38f;
 
-        // Detail
-        float detail = Noise.fractal(nx * 14f, nz * 14f, seed ^ 0x9e3779b9, 3) * 0.08f;
+        // Fine detail
+        float detail = Noise.fractal(dx, dz, seed ^ 0x9e3779b9, 3) * 0.12f;
 
-        float h = 0f;
-        h += cont * 0.35f;
-        h += range * cont * 0.55f;
-        h += hills * cont * 0.22f;
+        float h = 0.12f; // base rise so land isn't ocean-flat mid-continent
+        h += cont * 0.28f;
+        h += range * cont * 0.85f;   // mountains
+        h += hills * cont * 0.38f;   // primary hills
+        h += hills2 * cont * 0.18f;  // secondary
         h += plateau * cont;
         h += mesaH * cont;
-        h -= valleyCut * cont;
-        h += detail * cont;
+        h -= valleyCut * (0.55f + 0.45f * cont);
+        h += detail * (0.35f + 0.65f * cont);
 
-        // Ocean shelf outside continent
-        if (cont < 0.15f) {
-            h = -0.35f + hills * 0.05f;
-        } else if (cont < 0.4f) {
-            h = lerp(-0.2f, h, (cont - 0.15f) / 0.25f);
+        // Ocean / shelf only where continentalness is truly low
+        if (cont < 0.12f) {
+            h = -0.28f + hills * 0.06f + detail * 0.04f;
+        } else if (cont < 0.35f) {
+            h = lerp(-0.12f, h, (cont - 0.12f) / 0.23f);
         }
 
         if (cfg.type == WorldConfig.WorldType.AMPLIFIED) {
-            h *= 1.35f;
-            h += range * 0.2f;
+            h *= 1.45f;
+            h += range * 0.28f;
+            h += hills * 0.12f;
+        } else {
+            // NORMAL — ensure readable relief
+            h *= 1.12f;
         }
 
         return h * hs;
