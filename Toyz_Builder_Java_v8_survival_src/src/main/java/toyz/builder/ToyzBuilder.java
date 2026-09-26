@@ -162,6 +162,8 @@ public final class ToyzBuilder {
                         Terrain.pendingSkyIslands = titleMenu.skyIslands;
                         Terrain.pendingNether = (wt == Terrain.WorldType.NETHER);
                         forest = Terrain.generateForestTerrain(seed, wt, titleMenu.structures);
+                        Terrain.homeSeed = seed;
+                        Terrain.warpCooldown = 1.5f;
                         mapSystem.createNewMap(String.format("World %d", seed & 0xFFFF), MapSystem.MapType.OUTDOOR);
                         MapSystem.Map m = mapSystem.getCurrentMap();
                         if (m != null) {
@@ -481,21 +483,95 @@ public final class ToyzBuilder {
             // --- Movement (MCCE-style, relative to camYaw) ---
             if (!menuOpen) {
                 Player.update(player, forest, dt, hasController, 0, camYaw, !Survival.showCraft && !mapLoader.open);
-                // Obsidian obelisk → Nether (same seed + dimension salt)
-                if (!forest.nether && Terrain.checkObeliskPortal(
-                        forest, player.position.x(), player.position.y(), player.position.z(), 2.8f)) {
-                    int netherSeed = forest.seed ^ 0x4E455448; // NETH
-                    Terrain.pendingNether = true;
-                    Terrain.pendingSkyIslands = false;
-                    forest = Terrain.generateForestTerrain(netherSeed, Terrain.WorldType.NETHER, true);
-                    player = Player.init(forest);
-                    placedPieces.clear();
-                    try {
-                        MapSystem.StructureSettings sc = new MapSystem.StructureSettings();
-                        sc.enabled = true;
-                        placedPieces.addAll(MapSystem.generateStructures(forest, sc));
-                    } catch (Throwable ignored) {}
-                    System.out.println("[Portal] Entered Nether via obelisk seed=" + netherSeed);
+                // Loading zones — cooldown prevents instant bounce-back
+                if (Terrain.warpCooldown <= 0f) {
+                    toyz.builder.terrain.ZonePortal zp = Terrain.checkZonePortal(
+                            forest, player.position.x(), player.position.y(), player.position.z());
+                    if (zp != null && zp.active) {
+                        zp.active = false;
+                        // Remember overworld seed when leaving it
+                        if (!forest.nether && !forest.indoor && !forest.caveWorld
+                                && forest.worldType != Terrain.WorldType.FOREST
+                                && forest.worldType != Terrain.WorldType.DESERT
+                                && forest.worldType != Terrain.WorldType.CORAL
+                                && forest.worldType != Terrain.WorldType.SKY
+                                && forest.worldType != Terrain.WorldType.INDUSTRIAL) {
+                            Terrain.homeSeed = forest.seed;
+                        }
+                        Terrain.WorldType dest;
+                        int destSeed;
+                        Terrain.pendingNether = false;
+                        Terrain.pendingTheme = null;
+                        Terrain.pendingSkyIslands = false;
+                        switch (zp.target) {
+                            case NETHER:
+                                dest = Terrain.WorldType.NETHER;
+                                destSeed = Terrain.homeSeed ^ 0x4E455448 ^ zp.salt;
+                                Terrain.pendingNether = true;
+                                break;
+                            case INDOOR:
+                                dest = Terrain.WorldType.INDOOR;
+                                destSeed = Terrain.homeSeed ^ 0x494E4452 ^ zp.salt;
+                                break;
+                            case CAVE:
+                                dest = Terrain.WorldType.CAVE;
+                                destSeed = Terrain.homeSeed ^ 0x43415645 ^ zp.salt;
+                                break;
+                            case FOREST:
+                                dest = Terrain.WorldType.FOREST;
+                                destSeed = Terrain.homeSeed ^ 0x46525354 ^ zp.salt;
+                                Terrain.pendingTheme = Terrain.WorldType.FOREST;
+                                break;
+                            case DESERT:
+                                dest = Terrain.WorldType.DESERT;
+                                destSeed = Terrain.homeSeed ^ 0x44535254 ^ zp.salt;
+                                Terrain.pendingTheme = Terrain.WorldType.DESERT;
+                                break;
+                            case CORAL:
+                                dest = Terrain.WorldType.CORAL;
+                                destSeed = Terrain.homeSeed ^ 0x43524C00 ^ zp.salt;
+                                Terrain.pendingTheme = Terrain.WorldType.CORAL;
+                                break;
+                            case SKY:
+                                dest = Terrain.WorldType.SKY;
+                                destSeed = Terrain.homeSeed ^ 0x534B5900 ^ zp.salt;
+                                Terrain.pendingTheme = Terrain.WorldType.SKY;
+                                Terrain.pendingSkyIslands = true;
+                                break;
+                            case INDUSTRIAL:
+                                dest = Terrain.WorldType.INDUSTRIAL;
+                                destSeed = Terrain.homeSeed ^ 0x494E4453 ^ zp.salt;
+                                Terrain.pendingTheme = Terrain.WorldType.INDUSTRIAL;
+                                break;
+                            case OVERWORLD:
+                            default:
+                                dest = Terrain.WorldType.NORMAL;
+                                destSeed = Terrain.homeSeed;
+                                break;
+                        }
+                        forest = Terrain.generateForestTerrain(destSeed, dest, dest != Terrain.WorldType.INDOOR);
+                        player = Player.init(forest);
+                        // Spawn clear of return portal (return is at 14,14)
+                        player.position.x(0).z(0)
+                                .y(Terrain.getTerrainHeight(forest, 0, 0) + player.radius);
+                        placedPieces.clear();
+                        try {
+                            if (forest.indoor) {
+                                buildIndoorRoom(placedPieces, forest);
+                            } else {
+                                MapSystem.StructureSettings sc = new MapSystem.StructureSettings();
+                                sc.enabled = true;
+                                List<Piece.PlacedPiece> gen = MapSystem.generateStructures(forest, sc);
+                                placedPieces.addAll(gen);
+                                registerDoorPortals(forest, gen, forest.nether);
+                            }
+                        } catch (Throwable ex) {
+                            System.err.println("[Zone] structure fail: " + ex.getMessage());
+                        }
+                        Terrain.warpCooldown = 1.25f; // seconds before next warp
+                        System.out.println("[Zone] → " + dest + " via " + zp.name
+                                + " seed=" + destSeed + " cooldown=1.25s");
+                    }
                 }
                 if (gameMode.isSurvival() && Survival.enabled) {
                     Survival.update(player, forest, dt);
@@ -772,6 +848,10 @@ public final class ToyzBuilder {
             // sky tint for nether handled below
             if (forest != null && forest.nether)
                 ClearBackground(Helpers.newColor(45, 12, 10, 255));
+            else if (forest != null && forest.caveWorld)
+                ClearBackground(Helpers.newColor(8, 8, 12, 255));
+            else if (forest != null && forest.indoor)
+                ClearBackground(Helpers.newColor(25, 28, 32, 255));
             else
                 ClearBackground(skyColors[si]);
 
@@ -905,6 +985,17 @@ public final class ToyzBuilder {
                 }
             }
 
+            if (appState == AppState.Playing && forest != null && player != null) {
+                String hint = Terrain.nearestPortalHint(forest, player.position.x(), player.position.z(), 14f);
+                if (hint != null) {
+                    DrawText("PIPE: " + hint, 12, GetScreenHeight() - 52, 18,
+                             Helpers.newColor(80, 255, 120, 255));
+                }
+                if (Terrain.warpCooldown > 0f) {
+                    DrawText(String.format("warp lock %.1fs", Terrain.warpCooldown),
+                             12, GetScreenHeight() - 30, 16, Helpers.newColor(255, 180, 80, 255));
+                }
+            }
             EndDrawing();
             if (requestExit) break;
         }
@@ -969,5 +1060,54 @@ public final class ToyzBuilder {
             }
         }
         return bestIndex;
+    }
+
+
+    private static void registerDoorPortals(Terrain.ForestTerrain forest,
+                                            List<Piece.PlacedPiece> pieces, boolean netherWorld) {
+        if (forest == null || pieces == null) return;
+        int i = 0;
+        for (Piece.PlacedPiece pp : pieces) {
+            if (pp == null || pp.type != Piece.PieceType.Door) continue;
+            float dx = pp.position.x(), dy = pp.position.y(), dz = pp.position.z();
+            toyz.builder.terrain.ZonePortal.Target tgt = netherWorld
+                    ? toyz.builder.terrain.ZonePortal.Target.OVERWORLD
+                    : toyz.builder.terrain.ZonePortal.Target.INDOOR;
+            Terrain.addZonePortal(forest, dx, dy, dz, tgt,
+                    (int)(dx * 31 + dz * 17 + i), netherWorld ? "Nether Door" : "Door");
+            i++;
+        }
+        System.out.println("[Zone] door portals registered=" + i);
+    }
+
+    private static void buildIndoorRoom(List<Piece.PlacedPiece> out, Terrain.ForestTerrain forest) {
+        float g = Terrain.getTerrainHeight(forest, 0, 0);
+        for (int x = -4; x <= 4; x++) {
+            for (int z = -4; z <= 4; z++) {
+                Piece.PlacedPiece fl = new Piece.PlacedPiece();
+                fl.type = Piece.PieceType.PlankWide;
+                fl.color = Piece.PieceColor.Oak;
+                fl.position = Helpers.newVector3(x, g, z);
+                out.add(fl);
+            }
+        }
+        for (int y = 0; y < 3; y++) {
+            for (int i = -4; i <= 4; i++) {
+                for (int[] side : new int[][]{{i, -4}, {i, 4}, {-4, i}, {4, i}}) {
+                    Piece.PlacedPiece w = new Piece.PlacedPiece();
+                    w.type = Piece.PieceType.BlockWood;
+                    w.color = Piece.PieceColor.Pine;
+                    w.position = Helpers.newVector3(side[0], g + 0.5f + y, side[1]);
+                    out.add(w);
+                }
+            }
+        }
+        Piece.PlacedPiece door = new Piece.PlacedPiece();
+        door.type = Piece.PieceType.Door;
+        door.color = Piece.PieceColor.Walnut;
+        door.position = Helpers.newVector3(0, g + 0.9f, 4.2f);
+        out.add(door);
+        Terrain.addZonePortal(forest, 0, g + 0.9f, 4.2f,
+                toyz.builder.terrain.ZonePortal.Target.OVERWORLD, forest.seed, "Exit");
     }
 }

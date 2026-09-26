@@ -18,6 +18,8 @@ public final class WorldConfig {
     public boolean skyIslands = false;
     /** Nether dimension (red sky, lava, 3 biomes). */
     public boolean nether = false;
+    /** FOREST DESERT CORAL SKY INDUSTRIAL — null = normal climate. */
+    public String forceTheme = null;
     public float size = 400f;
     public float sampleSpacing = 4f;
     public float heightScale = 16f;

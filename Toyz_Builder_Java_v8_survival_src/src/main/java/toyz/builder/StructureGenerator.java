@@ -266,7 +266,7 @@ public final class StructureGenerator {
             r.pieces.add(piece(Piece.PieceType.BlockMetal, cx + half, ground + 0.5f + y, cz, 0, Piece.PieceColor.Red));
             r.pieces.add(piece(Piece.PieceType.BlockMetal, cx - half, ground + 0.5f + y, cz, 0, Piece.PieceColor.Red));
         }
-        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Walnut));
+        r.pieces.add(piece(Piece.PieceType.Door, cx, ground + 0.9f, cz - half - 0.05f, 0, Piece.PieceColor.Natural)); // black-tinted nether door
         r.pieces.add(piece(Piece.PieceType.FabricFlag, cx, ground + height + 1.5f, cz, 0, Piece.PieceColor.Red));
         addSpawner(r, cx, cz, ground, Mob.Kind.FIRE_SPRITE, 0, 0, 7f, 3);
         addSpawner(r, cx, cz, ground, Mob.Kind.IMP, half + 2f, 0, 9f, 2);

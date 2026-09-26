@@ -20,6 +20,25 @@ public final class BiomeGenerator {
 
     public static BiomeId pick(TerrainSample s, WorldConfig cfg) {
         if (cfg != null && cfg.nether) return pickNether(s);
+        if (cfg != null && cfg.forceTheme != null) {
+            switch (cfg.forceTheme) {
+                case "FOREST":
+                    if (s.inWater) return BiomeId.OCEAN;
+                    return s.moisture > 0.55f ? BiomeId.FOREST : BiomeId.BIRCH;
+                case "DESERT":
+                    if (s.inWater) return BiomeId.OCEAN;
+                    return s.erosion > 0.5f ? BiomeId.BADLANDS : BiomeId.DESERT;
+                case "CORAL":
+                    if (s.inWater || s.waterProximity > 0.3f) return BiomeId.CORAL_REEF;
+                    return BiomeId.BEACH;
+                case "SKY":
+                    if (s.height > 8f) return BiomeId.ALPINE;
+                    return BiomeId.HIGHLANDS;
+                case "INDUSTRIAL":
+                    return BiomeId.BADLANDS; // gray rock later tinted
+                default: break;
+            }
+        }
 
         if (s.inWater && s.temperature < 0.28f) return BiomeId.FROZEN_LAKE;
         // Warm shallow water → coral reef

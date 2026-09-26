@@ -106,10 +106,19 @@ public final class Terrain {
         public int variant; // rock tint
     }
 
+    /** Mario-style warp pipe — drawn as metal cylinders, not block stacks. */
+    public static class WarpPipe {
+        public float x, y, z;
+        public int color; // 0..6
+        public toyz.builder.terrain.ZonePortal.Target target;
+    }
+
     /** Decorative rock outcrop cluster (uses rock/stone textures). */
     public static class RockOutcrop {
         public boolean coral;
         public boolean nether;
+        public boolean pipe;
+        public int pipeColor;
         public Vector3 position;
         public float scale;
         public float rotation;
@@ -147,7 +156,7 @@ public final class Terrain {
         }
     }
 
-    public enum WorldType { FLAT, NORMAL, AMPLIFIED, NETHER }
+    public enum WorldType { FLAT, NORMAL, AMPLIFIED, NETHER, INDOOR, CAVE, FOREST, DESERT, CORAL, SKY, INDUSTRIAL }
 
     public static class WorldConfig {
         public WorldType type = WorldType.NORMAL;
@@ -191,6 +200,11 @@ public final class Terrain {
         public WorldType worldType = WorldType.NORMAL;
         public boolean structuresEnabled = true;
         public boolean nether = false;
+        public boolean indoor = false;
+        public boolean caveWorld = false;
+        public java.util.List<toyz.builder.terrain.ZonePortal> zonePortals =
+            new java.util.ArrayList<>();
+        public java.util.List<WarpPipe> warpPipes = new java.util.ArrayList<>();
         public java.util.List<toyz.builder.terrain.RavineGenerator.RavinePath> ravines =
             new java.util.ArrayList<>();
         public java.util.List<toyz.builder.terrain.RavineGenerator.OreNode> ores =
@@ -210,11 +224,90 @@ public final class Terrain {
     public static int pendingMapgenPreset = 4; // V6
     public static boolean pendingSkyIslands = false;
     public static boolean pendingNether = false;
+    /** Original overworld seed — return warps use this. */
+    public static int homeSeed = 0xC0FFEE;
+    /** Frames to ignore zone triggers after a warp (stops bounce-back). */
+    public static float warpCooldown = 0f;
+    /** Forced theme for destination maps: FOREST DESERT CORAL SKY INDUSTRIAL or null. */
+    public static WorldType pendingTheme = null;
+
+
 
 
     private static final float WATER_LEVEL_FRAC = -0.30f;
 
     private Terrain() {}
+
+    private static void placeCaveEntrances(ForestTerrain forest, int seed) {
+        int n = 4 + (Math.abs(seed) % 4);
+        for (int i = 0; i < n; i++) {
+            float ang = hash2D(i, 1, seed + 0x43415645) * 6.283f;
+            float dist = 40f + hash2D(i, 2, seed + 0x43415645) * 120f;
+            float x = (float) Math.cos(ang) * dist;
+            float z = (float) Math.sin(ang) * dist;
+            float y = getTerrainHeight(forest, x, z);
+            addZonePortal(forest, x, y, z, toyz.builder.terrain.ZonePortal.Target.CAVE,
+                    seed ^ (i * 7919), "Cave Mouth");
+            RockOutcrop rock = new RockOutcrop();
+            rock.position = Helpers.newVector3(x, y, z);
+            rock.scale = 1.8f + hash2D(i, 3, seed) * 1.5f;
+            rock.rotation = hash2D(i, 4, seed) * 360f;
+            rock.variant = 0;
+            rock.blocks = 4;
+            rock.nether = true;
+            forest.rocks.add(rock);
+        }
+
+        System.out.println("[Zone] cave entrances=" + n);
+    }
+
+    private static void placeWarpPipes(ForestTerrain forest, int seed) {
+        if (forest.warpPipes == null) forest.warpPipes = new java.util.ArrayList<>();
+        if (forest.zonePortals == null) forest.zonePortals = new java.util.ArrayList<>();
+        // First pipe close to spawn for easy testing
+        {
+            float x = 10f, z = 2f;
+            float y = getTerrainHeight(forest, x, z);
+            placeWarpPipeProp(forest, x, y, z, 0); // green → forest
+            toyz.builder.terrain.ZonePortal portal = new toyz.builder.terrain.ZonePortal(
+                    x, y, z, toyz.builder.terrain.ZonePortal.Target.FOREST, seed ^ 111);
+            portal.name = toyz.builder.terrain.ZonePortal.pipeName(0);
+            portal.pipeColor = 0;
+            portal.radius = 4.0f;
+            portal.active = true;
+            forest.zonePortals.add(portal);
+        }
+        // Ring of remaining colors
+        for (int c = 1; c < 7; c++) {
+            float ang = (c / 7f) * 6.2831853f;
+            float dist = 18f + c * 4f;
+            float x = (float) Math.cos(ang) * dist;
+            float z = (float) Math.sin(ang) * dist;
+            float y = getTerrainHeight(forest, x, z);
+            placeWarpPipeProp(forest, x, y, z, c);
+            toyz.builder.terrain.ZonePortal.Target tgt =
+                toyz.builder.terrain.ZonePortal.fromPipeColor(c);
+            toyz.builder.terrain.ZonePortal portal = new toyz.builder.terrain.ZonePortal(
+                    x, y, z, tgt, seed ^ (c * 9973));
+            portal.name = toyz.builder.terrain.ZonePortal.pipeName(c);
+            portal.pipeColor = c;
+            portal.radius = 3.5f; // generous trigger
+            portal.active = true;
+            forest.zonePortals.add(portal);
+        }
+        System.out.println("[Zone] warp pipes=" + forest.warpPipes.size()
+                + " portals=" + forest.zonePortals.size());
+    }
+
+    private static void placeWarpPipeProp(ForestTerrain forest, float x, float y, float z, int color) {
+        WarpPipe pipe = new WarpPipe();
+        pipe.x = x;
+        pipe.y = y;
+        pipe.z = z;
+        pipe.color = color & 7;
+        pipe.target = toyz.builder.terrain.ZonePortal.fromPipeColor(color);
+        forest.warpPipes.add(pipe);
+    }
 
     private static Model tryLoadGlb(String path) {
         try {
@@ -556,19 +649,63 @@ public final class Terrain {
         return Helpers.newColor((int) (br * shade), (int) (bg * shade), (int) (bb * shade), 255);
     }
 
-    /** Returns true if player entered an active overworld obelisk (triggers Nether). */
-    public static boolean checkObeliskPortal(ForestTerrain forest, float px, float py, float pz, float radius) {
-        if (forest == null || forest.nether || forest.obelisks == null) return false;
-        float r2 = radius * radius;
-        for (toyz.builder.terrain.RavineGenerator.PortalObelisk p : forest.obelisks) {
+    /**
+     * Unified loading-zone check (obelisk / door / dark cave mouth).
+     * Returns the portal hit, or null.
+     */
+    /** For HUD — name of nearest active portal within range, or null. */
+    public static String nearestPortalHint(ForestTerrain forest, float px, float pz, float maxDist) {
+        if (forest == null || forest.zonePortals == null) return null;
+        String best = null;
+        float bestD = maxDist * maxDist;
+        for (toyz.builder.terrain.ZonePortal p : forest.zonePortals) {
             if (!p.active) continue;
             float dx = px - p.x, dz = pz - p.z;
-            if (dx * dx + dz * dz > r2) continue;
-            if (Math.abs(py - p.y) > 8f) continue;
-            p.active = false; // one-shot until regenerate
-            return true;
+            float d = dx * dx + dz * dz;
+            if (d < bestD) { bestD = d; best = p.name; }
         }
-        return false;
+        return best;
+    }
+
+    public static toyz.builder.terrain.ZonePortal checkZonePortal(
+            ForestTerrain forest, float px, float py, float pz) {
+        if (forest == null || forest.zonePortals == null) return null;
+        for (toyz.builder.terrain.ZonePortal p : forest.zonePortals) {
+            if (!p.active) continue;
+            float dx = px - p.x, dz = pz - p.z;
+            float r = p.radius > 0.1f ? p.radius : 2.5f;
+            if (dx * dx + dz * dz > r * r) continue;
+            if (Math.abs(py - p.y) > 10f) continue;
+            return p;
+        }
+        // Legacy obelisks → ZonePortal NETHER
+        if (!forest.nether && !forest.indoor && !forest.caveWorld && forest.obelisks != null) {
+            for (toyz.builder.terrain.RavineGenerator.PortalObelisk o : forest.obelisks) {
+                if (!o.active) continue;
+                float dx = px - o.x, dz = pz - o.z;
+                if (dx * dx + dz * dz > 2.8f * 2.8f) continue;
+                if (Math.abs(py - o.y) > 8f) continue;
+                o.active = false;
+                toyz.builder.terrain.ZonePortal zp = new toyz.builder.terrain.ZonePortal(
+                        o.x, o.y, o.z, toyz.builder.terrain.ZonePortal.Target.NETHER,
+                        (int)(o.x * 13 + o.z * 17));
+                zp.name = "Obelisk";
+                return zp;
+            }
+        }
+        return null;
+    }
+
+    /** Register a door / cave / return portal on the forest. */
+    public static void addZonePortal(ForestTerrain forest, float x, float y, float z,
+                                     toyz.builder.terrain.ZonePortal.Target target, int salt, String name) {
+        if (forest == null) return;
+        if (forest.zonePortals == null) forest.zonePortals = new java.util.ArrayList<>();
+        toyz.builder.terrain.ZonePortal p = new toyz.builder.terrain.ZonePortal(x, y, z, target, salt);
+        p.name = name != null ? name : target.name();
+        if (target == toyz.builder.terrain.ZonePortal.Target.CAVE) p.radius = 3.2f;
+        if (target == toyz.builder.terrain.ZonePortal.Target.INDOOR) p.radius = 2.2f;
+        forest.zonePortals.add(p);
     }
 
     public static float getTerrainHeight(ForestTerrain forest, float x, float z) {
@@ -598,6 +735,25 @@ public final class Terrain {
         forest.worldType = worldType == null ? WorldType.NORMAL : worldType;
         forest.structuresEnabled = structuresEnabled;
         activeWorldType = forest.worldType;
+        if (forest.worldType == WorldType.INDOOR) {
+            forest.size = 48f;
+            forest.heightScale = 2f;
+            forest.indoor = true;
+        } else if (forest.worldType == WorldType.CAVE) {
+            forest.size = 180f;
+            forest.heightScale = 14f;
+            forest.caveWorld = true;
+        } else if (forest.worldType == WorldType.SKY) {
+            forest.size = 220f;
+            forest.heightScale = 28f;
+            pendingSkyIslands = true;
+        } else if (forest.worldType == WorldType.CORAL) {
+            forest.size = 200f;
+            forest.heightScale = 8f;
+        } else if (forest.worldType == WorldType.INDUSTRIAL) {
+            forest.size = 160f;
+            forest.heightScale = 10f;
+        }
         forest.size = 640f;
         forest.cellSize = 4.0f;
         forest.heightScale = 16f;
@@ -617,6 +773,18 @@ public final class Terrain {
             v2cfg.skyIslands = pendingSkyIslands;
             v2cfg.nether = pendingNether || forest.worldType == WorldType.NETHER;
             forest.nether = v2cfg.nether;
+            if (pendingTheme != null) {
+                v2cfg.forceTheme = pendingTheme.name();
+            } else if (forest.worldType == WorldType.FOREST) v2cfg.forceTheme = "FOREST";
+            else if (forest.worldType == WorldType.DESERT) v2cfg.forceTheme = "DESERT";
+            else if (forest.worldType == WorldType.CORAL) v2cfg.forceTheme = "CORAL";
+            else if (forest.worldType == WorldType.SKY) {
+                v2cfg.forceTheme = "SKY";
+                v2cfg.skyIslands = true;
+            } else if (forest.worldType == WorldType.INDUSTRIAL) v2cfg.forceTheme = "INDUSTRIAL";
+            forest.indoor = forest.worldType == WorldType.INDOOR;
+            forest.caveWorld = forest.worldType == WorldType.CAVE;
+            // Themed zones force climate later via pendingTheme
             v2cfg.applyPresetTuning();
             if (v2cfg.nether) v2cfg.applyNether();
             activeV2 = toyz.builder.terrain.TerrainGenerator.generate(v2cfg);
@@ -1303,6 +1471,37 @@ public final class Terrain {
             System.out.println("[Terrain] V2 active biomes/sites bridged; structureSites="
                 + forest.v2.structureSites.size() + " bridges=" + forest.v2.bridgeSites.size());
         }
+
+        // Dark land patches → cave world entrances (same idea as obelisks)
+        if (!forest.nether && !forest.indoor && !forest.caveWorld
+                && forest.worldType != WorldType.FOREST && forest.worldType != WorldType.DESERT
+                && forest.worldType != WorldType.CORAL && forest.worldType != WorldType.SKY
+                && forest.worldType != WorldType.INDUSTRIAL) {
+            placeCaveEntrances(forest, seed);
+            placeWarpPipes(forest, seed);
+        }
+        // Indoor / cave / nether: return portal near spawn
+        // Return pipe/pad away from spawn so player is not instantly ejected
+        if (forest.indoor || forest.caveWorld || forest.nether
+                || forest.worldType == WorldType.FOREST || forest.worldType == WorldType.DESERT
+                || forest.worldType == WorldType.CORAL || forest.worldType == WorldType.SKY
+                || forest.worldType == WorldType.INDUSTRIAL) {
+            float rx = 14f, rz = 14f;
+            float ry = getTerrainHeight(forest, rx, rz);
+            addZonePortal(forest, rx, ry, rz, toyz.builder.terrain.ZonePortal.Target.OVERWORLD,
+                    seed, "Return Pipe");
+            // Visual return pipe (black/silver)
+            placeWarpPipeProp(forest, rx, ry, rz, 6);
+        }
+
+        // Sync obelisks into zone list for uniform handling
+        if (forest.obelisks != null) {
+            for (toyz.builder.terrain.RavineGenerator.PortalObelisk o : forest.obelisks) {
+                addZonePortal(forest, o.x, o.y, o.z,
+                        toyz.builder.terrain.ZonePortal.Target.NETHER,
+                        (int)(o.x * 13 + o.z * 17), "Obelisk");
+            }
+        }
         return forest;
     }
 
@@ -1571,6 +1770,45 @@ public final class Terrain {
         }
     }
 
+
+    private static final Color[] PIPE_COLORS = {
+        Helpers.newColor(30, 170, 50, 255),    // green
+        Helpers.newColor(220, 185, 30, 255),   // yellow
+        Helpers.newColor(200, 35, 35, 255),    // red
+        Helpers.newColor(35, 110, 210, 255),   // blue
+        Helpers.newColor(170, 175, 185, 255),  // silver
+        Helpers.newColor(235, 235, 245, 255),  // white
+        Helpers.newColor(20, 20, 25, 255)      // black
+    };
+
+    private static void drawWarpPipes(ForestTerrain forest, Vector3 camPos) {
+        if (forest == null || forest.warpPipes == null) return;
+        float maxD = 120f * 120f;
+        for (WarpPipe pipe : forest.warpPipes) {
+            float dx = pipe.x - camPos.x(), dz = pipe.z - camPos.z();
+            if (dx * dx + dz * dz > maxD) continue;
+            Color col = PIPE_COLORS[pipe.color % 7];
+            Color dark = Helpers.newColor(
+                Math.max(0, col.r() - 40), Math.max(0, col.g() - 40), Math.max(0, col.b() - 40), 255);
+            // Body cylinder (metal shaft)
+            float bodyH = 2.6f;
+            float bodyR = 0.85f;
+            DrawCylinder(Helpers.newVector3(pipe.x, pipe.y, pipe.z),
+                    bodyR, bodyR, bodyH, 16, col);
+            // Lip / rim on top — larger radius (classic Mario pipe mouth)
+            float rimH = 0.55f;
+            float rimR = 1.25f;
+            DrawCylinder(Helpers.newVector3(pipe.x, pipe.y + bodyH, pipe.z),
+                    rimR, rimR * 0.95f, rimH, 16, col);
+            // Dark metal band under rim
+            DrawCylinder(Helpers.newVector3(pipe.x, pipe.y + bodyH - 0.08f, pipe.z),
+                    bodyR + 0.05f, bodyR + 0.05f, 0.12f, 16, dark);
+            // Dark hole on top
+            DrawCylinder(Helpers.newVector3(pipe.x, pipe.y + bodyH + rimH * 0.5f, pipe.z),
+                    0.55f, 0.55f, 0.12f, 12, Helpers.newColor(10, 10, 12, 255));
+        }
+    }
+
     // ---- main terrain draw ----
 
     public static void drawForestTerrain(ForestTerrain forest, Vector3 camPos, float maxDist) {
@@ -1578,6 +1816,8 @@ public final class Terrain {
     }
 
     public static void drawForestTerrain(ForestTerrain forest, Vector3 camPos, float maxDist, float time) {
+        drawWarpPipes(forest, camPos);
+
         // Draw biome material layers (sand/rock/dirt/snow/grass textures)
         boolean anyLayer = false;
         if (forest.terrainSand != null) { DrawModel(forest.terrainSand, Helpers.newVector3(0, 0, 0), 1f, WHITE); anyLayer = true; }
@@ -1711,6 +1951,7 @@ public final class Terrain {
         // Rock outcrops
         if (forest.rocks != null && forest.rockBlockModel != null) {
             for (RockOutcrop rock : forest.rocks) {
+                if (rock.pipe) continue; // cylinders drawn separately
                 float dx = rock.position.x() - camPos.x();
                 float dz = rock.position.z() - camPos.z();
                 if (dx*dx + dz*dz > propDistSq) continue;
@@ -1723,6 +1964,17 @@ public final class Terrain {
                         Helpers.newColor(40, 150, 200, 255)
                     };
                     rc = cc[Math.max(0, rock.variant) % 4];
+                } else if (rock.pipe) {
+                    Color[] pc = {
+                        Helpers.newColor(40, 180, 60, 255),   // green forest
+                        Helpers.newColor(220, 190, 40, 255),  // yellow desert
+                        Helpers.newColor(200, 40, 40, 255),   // red nether
+                        Helpers.newColor(40, 120, 220, 255),  // blue coral
+                        Helpers.newColor(160, 165, 175, 255), // silver cave
+                        Helpers.newColor(230, 230, 240, 255), // white sky
+                        Helpers.newColor(25, 25, 30, 255)     // black industrial
+                    };
+                    rc = pc[Math.max(0, rock.pipeColor) % 7];
                 } else if (rock.nether || forest.nether) {
                     Color[] nc = {
                         Helpers.newColor(180, 50, 30, 255),
