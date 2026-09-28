@@ -1,0 +1,17 @@
+# Toyz Builder options (edit in-game via Options)
+vsync:false
+fpsLimit:1
+renderDist:1
+fog:false
+trees:1
+treeDensity:1
+landscape:false
+modelCull:false
+preset:4
+transparency:false
+terrainBlend:0
+texFilter:0
+aniso:0
+fov:90
+hudInfo:2
+mouseSens:100

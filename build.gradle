@@ -1,0 +1,48 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.toyzbuilder'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+application {
+    mainClass = 'com.toyzbuilder.Main'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform("org.lwjgl:lwjgl-bom:3.3.3")
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-glfw"
+    implementation "org.lwjgl:lwjgl-opengl"
+    implementation "org.lwjgl:lwjgl-stb"
+    implementation "org.lwjgl:lwjgl-assimp"
+    implementation "org.joml:joml:1.10.5"
+
+    runtimeOnly "org.lwjgl:lwjgl::natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl-stb::natives-windows"
+    runtimeOnly "org.lwjgl:lwjgl-assimp::natives-windows"
+
+    runtimeOnly "org.lwjgl:lwjgl::natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-stb::natives-linux"
+    runtimeOnly "org.lwjgl:lwjgl-assimp::natives-linux"
+}
+
+tasks.named('run', JavaExec).configure {
+    standardInput = System.in
+    workingDir = project.projectDir
+}
