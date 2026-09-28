@@ -22,4 +22,6 @@ Place `assets/` next to this folder (same layout as WorldGen / Raylib assets).
 - Minecraft style controls
 - New landscape features
 - Fixed Inventory UI
-- Build errors check log
+- Dungeons, Towns, Graveyards, and Forts All Added
+- Options Menu Added
+- run bat optimized for performance
