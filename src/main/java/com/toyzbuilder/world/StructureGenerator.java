@@ -62,16 +62,21 @@ public final class StructureGenerator {
     private final List<Part> parts = new ArrayList<>();
     private final List<Warp> warps = new ArrayList<>();
     private final Map<String, float[]> dungeonEntrances = new HashMap<>();
+    private final List<float[]> spawnerMarks = new ArrayList<>(); // x,y,z,typeOrdinal
+
 
     public List<StructureSite> getSites() { return sites; }
     public List<Part> getParts() { return parts; }
     public List<Warp> getWarps() { return warps; }
+    /** Spawner markers: float[]{x,y,z, typeOrdinal} for EnemySystem. */
+    public List<float[]> getSpawnerMarks() { return spawnerMarks; }
 
     public void generate(Result terrain, int seed) {
         sites.clear();
         parts.clear();
         warps.clear();
         dungeonEntrances.clear();
+        spawnerMarks.clear();
         if (terrain == null) return;
 
         Random rng = new Random(seed ^ 0x53545255L); // "STRU"
@@ -450,7 +455,7 @@ public final class StructureGenerator {
             float bz = (r[1] - mid) * DG_CELL;
             float[] c = localToWorld(s, bx, bz);
             texPart(c[0], baseY + 0.2f, c[1], DG_CELL, 0.4f, DG_CELL, s.yaw,
-                    floorR, floorG, floorB, "CONCRETE", false);
+                    floorR, floorG, floorB, rng.nextBoolean() ? "CONCRETE" : "STONE", false);
             texPart(c[0], ceilCY, c[1], DG_CELL, 0.5f, DG_CELL, s.yaw,
                     ceilR, ceilG, ceilB, "ROCK", false);
             for (int d = 0; d < 4; d++) {
@@ -503,7 +508,51 @@ public final class StructureGenerator {
         texPart(eW[0], wallCY, eW[1], DG_WALL_T, DG_WALL_H, corLen, s.yaw, wallR, wallG, wallB, "STONE", true);
         texPart(eE[0], wallCY, eE[1], DG_WALL_T, DG_WALL_H, corLen, s.yaw, wallR, wallG, wallB, "STONE", true);
 
-        // ---- 5. warp pads + treasure ----
+        // ---- 5. theme variation + pillars / cages / props ----
+        int theme = rng.nextInt(4); // 0 crypt stone, 1 brick, 2 moss, 3 volcanic
+        String wallTex = switch (theme) {
+            case 1 -> "CONCRETE";
+            case 2 -> "PLANKS";
+            case 3 -> "ROCK";
+            default -> "STONE";
+        };
+        // recolor/texture accent pillars in every room
+        for (int[] r : rooms) {
+            float bx = (r[0] - mid) * DG_CELL;
+            float bz = (r[1] - mid) * DG_CELL;
+            float[] c = localToWorld(s, bx, bz);
+            // corner pillars
+            for (float ox : new float[]{-DG_CELL * 0.35f, DG_CELL * 0.35f}) {
+                for (float oz : new float[]{-DG_CELL * 0.35f, DG_CELL * 0.35f}) {
+                    float[] p = localToWorld(s, bx + ox, bz + oz);
+                    float pr = theme == 3 ? 0.55f : 0.4f;
+                    float pg = theme == 2 ? 0.5f : 0.38f;
+                    float pb = theme == 1 ? 0.35f : 0.42f;
+                    texPart(p[0], wallCY, p[1], 0.7f, DG_WALL_H * 0.95f, 0.7f, s.yaw,
+                            pr, pg, pb, wallTex, false);
+                }
+            }
+            // torch markers
+            if (rng.nextFloat() < 0.7f) {
+                float[] t = localToWorld(s, bx + DG_CELL * 0.2f, bz);
+                deco(t[0], floorTop + 2.2f, t[1], 0.25f, 0.7f, 0.25f, s.yaw, 1f, 0.7f, 0.2f);
+            }
+        }
+
+        // Iron-bar cage spawners (2-4 per dungeon)
+        int cages = 2 + rng.nextInt(3);
+        for (int i = 0; i < cages && i < rooms.size(); i++) {
+            int[] r = rooms.get(rng.nextInt(rooms.size()));
+            float bx = (r[0] - mid) * DG_CELL;
+            float bz = (r[1] - mid) * DG_CELL;
+            float[] c = localToWorld(s, bx + (rng.nextFloat() - 0.5f) * 4f,
+                    bz + (rng.nextFloat() - 0.5f) * 4f);
+            buildIronCage(c[0], floorTop, c[1], s.yaw);
+            int typeOrd = rng.nextInt(3); // SLIME, SKELETON, BAT
+            spawnerMarks.add(new float[]{c[0], floorTop, c[1], typeOrd});
+        }
+
+        // ---- 6. warp pads + treasure ----
         float padZ = DG_CELL * 0.5f + corLen + 3f;
         float[] pad = localToWorld(s, 0, padZ);
         deco(pad[0], baseY + 0.45f, pad[1], 4f, 0.12f, 4f, s.yaw, 0.2f, 0.9f, 1f);
@@ -513,6 +562,9 @@ public final class StructureGenerator {
         deco(dw[0], baseY + 0.55f, dw[1], 4f, 0.12f, 4f, s.yaw, 1f, 0.6f, 0.15f);
         // treasure chest marker in the deepest room
         deco(dw[0], floorTop + 0.55f, dw[1] + 2f, 1.1f, 1.0f, 1.1f, s.yaw, 0.85f, 0.65f, 0.15f);
+        // boss-ish altar
+        texPart(dw[0], floorTop + 0.4f, dw[1] - 2.5f, 2.4f, 0.7f, 1.2f, s.yaw,
+                0.45f, 0.2f, 0.5f, "ROCK", false);
 
         float[] rt = localToWorld(s, 0, DG_CELL * 0.5f + 3f); // inside the entry corridor
         warps.add(new Warp(pad[0], baseY + 0.5f, pad[1], 2.6f,
@@ -733,6 +785,27 @@ public final class StructureGenerator {
             default -> { x = lx; z = lz; }
         }
         return new float[]{ox + x, oz + z};
+    }
+
+
+    /** Iron-bar mob cage — spawner visual (solid bars). */
+    private void buildIronCage(float x, float y, float z, float yaw) {
+        float h = 2.4f;
+        float w = 2.2f;
+        float t = 0.12f;
+        float ironR = 0.45f, ironG = 0.45f, ironB = 0.48f;
+        texPart(x, y + 0.08f, z, w, 0.15f, w, yaw, 0.3f, 0.3f, 0.32f, "IRON_BARS", false);
+        texPart(x, y + h * 0.5f, z - w * 0.5f, w, h, t, yaw, ironR, ironG, ironB, "IRON_BARS", true);
+        texPart(x, y + h * 0.5f, z + w * 0.5f, w, h, t, yaw, ironR, ironG, ironB, "IRON_BARS", true);
+        texPart(x - w * 0.5f, y + h * 0.5f, z, t, h, w, yaw, ironR, ironG, ironB, "IRON_BARS", true);
+        texPart(x + w * 0.5f, y + h * 0.5f, z, t, h, w, yaw, ironR, ironG, ironB, "IRON_BARS", true);
+        for (float ox : new float[]{-w * 0.5f, w * 0.5f}) {
+            for (float oz : new float[]{-w * 0.5f, w * 0.5f}) {
+                texPart(x + ox, y + h * 0.5f, z + oz, 0.22f, h, 0.22f, yaw,
+                        ironR * 0.9f, ironG * 0.9f, ironB, "IRON_BARS", false);
+            }
+        }
+        deco(x, y + 0.4f, z, 0.6f, 0.15f, 0.6f, yaw, 0.9f, 0.25f, 0.15f);
     }
 
     // ============================= FORT ============================

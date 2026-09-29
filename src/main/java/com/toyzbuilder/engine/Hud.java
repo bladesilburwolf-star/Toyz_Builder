@@ -127,10 +127,18 @@ public final class Hud {
         if (s == null || s.isEmpty()) return;
         float px = x;
         float cell = glyphScale;
+        // 5-wide glyphs + 2px gap; space is 4 cells; tab is 4 spaces
+        final float advance = cell * 7f;
+        final float spaceW = cell * 4f;
+        final float tabW = cell * 16f;
         for (int i = 0; i < s.length(); i++) {
             char ch = s.charAt(i);
             if (ch == ' ') {
-                px += cell * 6f;
+                px += spaceW;
+                continue;
+            }
+            if (ch == '\t') {
+                px += tabW;
                 continue;
             }
             byte[] rows = Glyphs.get(ch);
@@ -146,7 +154,7 @@ public final class Hud {
                     }
                 }
             }
-            px += cell * 6f;
+            px += advance;
         }
     }
 

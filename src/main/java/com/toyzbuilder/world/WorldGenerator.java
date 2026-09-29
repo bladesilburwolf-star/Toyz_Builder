@@ -13,6 +13,9 @@ public final class WorldGenerator {
     public enum Biome {
         OCEAN(0.10f, 0.25f, 0.55f),
         BEACH(0.76f, 0.70f, 0.45f),
+        CORAL_REEF(0.15f, 0.55f, 0.55f),
+        LAKE(0.20f, 0.40f, 0.55f),
+        RIVER(0.25f, 0.45f, 0.50f),
         MEADOW(0.30f, 0.62f, 0.22f),
         FOREST(0.15f, 0.42f, 0.14f),
         JUNGLE(0.08f, 0.48f, 0.12f),
@@ -125,16 +128,126 @@ public final class WorldGenerator {
                 float moist = fbm(x * 0.004f + 77, z * 0.004f + 77, 3, 2.0f, 0.5f);
 
                 bio[i] = pickBiome(land, elev, temp, moist, height);
-                if (bio[i] == Biome.OCEAN || bio[i] == Biome.BEACH) {
-                    height = Math.min(height, cfg.waterLevel + (bio[i] == Biome.BEACH ? 0.6f : -0.5f));
+
+                // Water body depths — oceans go deep; coral is shallow shelf; lakes mid-depth
+                if (bio[i] == Biome.OCEAN) {
+                    // Deep seafloor: 8–22 units below water line
+                    float abyss = fbm(x * 0.008f + 300, z * 0.008f + 300, 3, 2.0f, 0.5f);
+                    height = cfg.waterLevel - (8f + abyss * 14f);
+                } else if (bio[i] == Biome.CORAL_REEF) {
+                    // Shallow tropical shelf 1–4 under water
+                    float shelf = fbm(x * 0.02f + 50, z * 0.02f + 50, 2, 2.0f, 0.5f);
+                    height = cfg.waterLevel - (1.2f + shelf * 2.8f);
+                } else if (bio[i] == Biome.LAKE) {
+                    height = Math.min(height, cfg.waterLevel - (2f + elev * 4f));
+                } else if (bio[i] == Biome.RIVER) {
+                    height = Math.min(height, cfg.waterLevel - 0.8f);
+                } else if (bio[i] == Biome.BEACH) {
+                    height = Math.min(height, cfg.waterLevel + 0.6f);
                 }
-                if (bio[i] == Biome.SWAMP) {
+                if (bio[i] == Biome.SWAMP || bio[i] == Biome.MARSH) {
                     height = Math.min(height, cfg.waterLevel + 1.2f);
+                }
+                // Rivers already partially carved; tag cells in the carve band
+                if (land > 0.4f && river < 0.035f && bio[i] != Biome.OCEAN && bio[i] != Biome.CORAL_REEF) {
+                    bio[i] = Biome.RIVER;
+                    height = Math.min(height, cfg.waterLevel - 0.6f + river * 6f);
                 }
                 h[i] = height;
             }
         }
+
+        // Vertical features: ravines + cave mouths carved into the heightfield
+        carveRavines(h, bio, n, half);
+        carveCaveMouths(h, bio, n, half);
+
         return new Result(cfg, h, bio);
+    }
+
+    /**
+     * Deep linear gorges (Minecraft / DF style). Ridged noise picks canyon lines;
+     * height is lowered into a U-shaped channel so the mesh itself forms cliffs.
+     */
+    private void carveRavines(float[] h, Biome[] bio, int n, float half) {
+        float sp = cfg.spacing;
+        int carved = 0;
+        for (int iz = 0; iz < n; iz++) {
+            for (int ix = 0; ix < n; ix++) {
+                int i = iz * n + ix;
+                if (bio[i] == Biome.OCEAN || bio[i] == Biome.BEACH) continue;
+                float x = ix * sp - half;
+                float z = iz * sp - half;
+
+                // Primary canyon axis — thin band where noise crosses 0.5
+                float line = Math.abs(fbm(x * 0.0028f + 401, z * 0.0028f + 17, 3, 2.05f, 0.5f) - 0.5f);
+                // Secondary branch canyons
+                float line2 = Math.abs(fbm(x * 0.0045f - 90, z * 0.0045f + 220, 2, 2.1f, 0.5f) - 0.5f);
+                float nearest = Math.min(line, line2 * 1.15f);
+                if (nearest > 0.055f) continue;
+
+                // Prefer highlands / mountains for dramatic cuts
+                float ridge = fbm(x * 0.01f + 9, z * 0.01f + 9, 2, 2.0f, 0.5f);
+                if (h[i] < cfg.waterLevel + 3f && ridge < 0.45f) continue;
+
+                float t = 1f - nearest / 0.055f; // 1 at center
+                t = t * t;
+                float depth = (10f + ridge * 14f) * t; // up to ~24 units deep
+                // Keep a walkable floor slightly above a deep pit
+                float floor = Math.max(cfg.waterLevel - 2f, h[i] - depth);
+                if (floor < h[i] - 0.5f) {
+                    h[i] = floor;
+                    carved++;
+                    // Rock walls read better with rocky biomes on the cut
+                    if (t > 0.55f && bio[i] != Biome.OCEAN) {
+                        if (h[i] < cfg.waterLevel + 1f) {
+                            // leave wet floor
+                        } else if (ridge > 0.55f) {
+                            bio[i] = Biome.CRAG;
+                        }
+                    }
+                }
+            }
+        }
+        System.out.println("[Terrain] ravine cells carved=" + carved);
+    }
+
+    /**
+     * Cave mouths / sink tunnels: wormy blobs of lowered terrain that look like
+     * openings into the hillside. Deep enough to walk into; interiors can later
+     * link to structure-based cave rooms.
+     */
+    private void carveCaveMouths(float[] h, Biome[] bio, int n, float half) {
+        float sp = cfg.spacing;
+        int carved = 0;
+        for (int iz = 0; iz < n; iz++) {
+            for (int ix = 0; ix < n; ix++) {
+                int i = iz * n + ix;
+                if (bio[i] == Biome.OCEAN || bio[i] == Biome.BEACH) continue;
+                float x = ix * sp - half;
+                float z = iz * sp - half;
+                if (h[i] < cfg.waterLevel + 4f) continue;
+
+                // 3-ish frequency worm noise
+                float c1 = fbm(x * 0.018f + 500, z * 0.018f + 500, 3, 2.0f, 0.55f);
+                float c2 = fbm(x * 0.035f - 40, z * 0.035f + 80, 2, 2.2f, 0.5f);
+                float cave = c1 * 0.65f + c2 * 0.35f;
+                // only the high lobe becomes a mouth / tunnel segment
+                if (cave < 0.72f) continue;
+
+                float strength = (cave - 0.72f) / 0.28f;
+                strength = strength * strength;
+                float depth = (4f + strength * 10f);
+                float floor = Math.max(cfg.waterLevel + 0.5f, h[i] - depth);
+                if (floor < h[i] - 0.8f) {
+                    h[i] = floor;
+                    carved++;
+                    if (strength > 0.5f && bio[i] != Biome.VOLCANIC) {
+                        bio[i] = Biome.CRAG;
+                    }
+                }
+            }
+        }
+        System.out.println("[Terrain] cave-mouth cells carved=" + carved);
     }
 
     public static float sampleHeight(Result r, float wx, float wz) {
@@ -214,6 +327,9 @@ public final class WorldGenerator {
     private static float[] biomeBlend(Biome b) {
         switch (b) {
             case OCEAN:
+            case LAKE:
+            case RIVER:      return new float[]{0.05f, 0.55f, 0.00f, 0.40f};
+            case CORAL_REEF:
             case BEACH:      return new float[]{0.05f, 0.85f, 0.00f, 0.10f};
             case DESERT:
             case SAVANNA:
@@ -271,8 +387,18 @@ public final class WorldGenerator {
     }
 
     private Biome pickBiome(float land, float elev, float temp, float moist, float height) {
-        if (land < 0.25f) return Biome.OCEAN;
-        if (land < 0.38f) return Biome.BEACH;
+        if (land < 0.22f) {
+            // Warm shallow shelf → coral; otherwise deep ocean
+            if (temp > 0.55f && moist > 0.4f && elev < 0.22f) return Biome.CORAL_REEF;
+            return Biome.OCEAN;
+        }
+        if (land < 0.36f) {
+            if (temp > 0.5f && moist > 0.45f) return Biome.CORAL_REEF;
+            return Biome.BEACH;
+        }
+        // Inland lakes: low elev, high moist, not ocean
+        if (elev < 0.28f && moist > 0.68f && temp > 0.3f && temp < 0.7f && land > 0.4f)
+            return Biome.LAKE;
         // high peaks
         if (elev > 0.78f) return temp < 0.35f ? Biome.SNOW : Biome.CRAG;
         if (elev > 0.68f) return temp < 0.4f ? Biome.SNOW : Biome.ALPINE;

@@ -25,3 +25,5 @@ Place `assets/` next to this folder (same layout as WorldGen / Raylib assets).
 - Dungeons, Towns, Graveyards, and Forts All Added
 - Options Menu Added
 - run bat optimized for performance
+- towns, dungeons, and graveyards all expanded
+- collision and artifacts issues addressed

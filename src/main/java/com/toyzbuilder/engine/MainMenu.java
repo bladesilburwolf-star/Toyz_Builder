@@ -26,6 +26,7 @@ public final class MainMenu {
     public int sizePreset = 1; // 0 small, 1 medium, 2 large
     public int worldType = 0;  // 0 normal, 1 flat, 2 amplified, 3 islands
     public boolean skyIslands = false;
+    public int gameMode = 0; // 0 Creative, 1 Survival
 
     private static final String[] TITLE_ITEMS = {
             "New Game", "Continue", "Mods", "Shaders", "Options", "Quit"
@@ -85,7 +86,7 @@ public final class MainMenu {
     }
 
     private void drawMapgen(Hud hud, int w, int h) {
-        float panelW = 520, panelH = 360;
+        float panelW = 520, panelH = 420;
         float px = (w - panelW) * 0.5f;
         float py = 100;
         steelPanel(hud, px, py, panelW, panelH);
@@ -96,6 +97,7 @@ public final class MainMenu {
                 "Seed: " + (seed & 0x7fffffff),
                 "Size: " + SIZE_LABELS[sizePreset],
                 "Type: " + TYPE_LABELS[worldType],
+                "Mode: " + (gameMode == 0 ? "Creative" : "Survival"),
                 "Sky Islands: " + (skyIslands ? "ON" : "OFF"),
                 "Generate World",
                 "Back"
@@ -154,26 +156,27 @@ public final class MainMenu {
         }
 
         if (screen == Screen.MAPGEN) {
-            if (up) mapgenIndex = (mapgenIndex + 5) % 6;
-            if (down) mapgenIndex = (mapgenIndex + 1) % 6;
+            if (up) mapgenIndex = (mapgenIndex + 6) % 7;
+            if (down) mapgenIndex = (mapgenIndex + 1) % 7;
             if (left || right) {
                 int dir = right ? 1 : -1;
                 switch (mapgenIndex) {
                     case 0 -> seed = (seed + dir * 9973);
                     case 1 -> sizePreset = Math.floorMod(sizePreset + dir, 3);
                     case 2 -> worldType = Math.floorMod(worldType + dir, 4);
-                    case 3 -> skyIslands = !skyIslands;
+                    case 3 -> gameMode = 1 - gameMode;
+                    case 4 -> skyIslands = !skyIslands;
                     default -> { }
                 }
             }
             if (enter) {
-                if (mapgenIndex == 4) return Action.PLAY_NEW;
-                if (mapgenIndex == 5) { screen = Screen.TITLE; return Action.NONE; }
-                // toggle on enter for sky islands / cycle others
-                if (mapgenIndex == 3) skyIslands = !skyIslands;
+                if (mapgenIndex == 5) return Action.PLAY_NEW;
+                if (mapgenIndex == 6) { screen = Screen.TITLE; return Action.NONE; }
                 if (mapgenIndex == 0) seed = (int) (System.currentTimeMillis() & 0x7fffffff);
                 if (mapgenIndex == 1) sizePreset = (sizePreset + 1) % 3;
                 if (mapgenIndex == 2) worldType = (worldType + 1) % 4;
+                if (mapgenIndex == 3) gameMode = 1 - gameMode;
+                if (mapgenIndex == 4) skyIslands = !skyIslands;
             }
             if (esc) { screen = Screen.TITLE; }
             return Action.NONE;

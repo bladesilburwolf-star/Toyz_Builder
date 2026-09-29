@@ -546,6 +546,9 @@ public class Renderer {
                 case BONE -> drawPropCube(f, 0.90f, 0.88f, 0.80f, 0.5f, 0.25f, 0.3f);
                 case PILLAR -> drawPropCube(f, 0.25f, 0.22f, 0.28f, 0.5f, 2.2f, 0.5f);
                 case SALT_CHUNK -> drawPropCube(f, 0.92f, 0.90f, 0.85f, 0.6f, 0.4f, 0.6f);
+                case CORAL_PILLAR -> drawPropCube(f, 0.95f, 0.35f, 0.55f, 0.35f, 2.4f, 0.35f);
+                case CORAL_FAN -> drawPropCube(f, 0.25f, 0.75f, 0.65f, 0.9f, 0.55f, 0.25f);
+                case WATERFALL -> drawPropCube(f, 0.35f, 0.65f, 0.95f, 0.5f, 2.5f, 0.15f);
                 default -> drawPropCube(f, 0.45f, 0.42f, 0.38f);
             }
         }

@@ -38,6 +38,10 @@ public class Window {
     private Editor editor;
     private BuilderUI builderUI;
     private MainMenu mainMenu;
+    private final Survival survival = new Survival();
+    private final SurvivalInventory survivalInv = new SurvivalInventory();
+    private final com.toyzbuilder.world.EnemySystem enemies = new com.toyzbuilder.world.EnemySystem();
+
     private boolean inMenu = true;
     private TerrainChunks terrainChunks;
     private Mesh terrainMesh; // legacy unused when chunks active
@@ -124,8 +128,10 @@ public class Window {
 
         treeField.generate(terrain, cfg.seed);
         world = new World(terrain);
+        world.getController().setWaterLevel(cfg.waterLevel);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
         world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        loadSpawnersFromStructures();
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
         world.getController().setPlayerPos(0, Math.max(spawnGround, cfg.waterLevel), 0);
 
@@ -275,6 +281,9 @@ public class Window {
                     GLFW.glfwSetWindowShouldClose(window, true);
                 } else if (act == MainMenu.Action.PLAY_NEW) {
                     mainMenu.applyTo(terrain.settings);
+                    survival.setMode(mainMenu.gameMode == 1
+                            ? Survival.Mode.SURVIVAL : Survival.Mode.CREATIVE);
+                    world.getController().setAllowFly(survival.isCreative());
                     regenerateFromSettings(terrain.settings);
                     enterPlay();
                 } else if (act == MainMenu.Action.PLAY_CONTINUE) {
@@ -307,6 +316,9 @@ public class Window {
                         input.setCursorDisabled(true);
                         world.getController().resyncMouseIfNeeded();
                     }
+                } else if (survival.isSurvival() && survivalInv.isOpen()) {
+                    survivalInv.setOpen(false);
+                    if (input != null) input.setCursorDisabled(true);
                 } else if (editor.isActive() && builderUI.isInventoryOpen()) {
                     builderUI.setInventoryOpen(false);
                     if (input != null) {
@@ -330,7 +342,13 @@ public class Window {
                 }
             }
             if (keyPressed(GLFW.GLFW_KEY_R) && !editor.isActive()) {
-                regenerate();
+                if (survival.isDead()) {
+                    float gy = WorldGenerator.sampleHeight(terrain, 0, 0);
+                    survival.respawn(0, Math.max(gy, terrain.settings.waterLevel) + 1.5f, 0,
+                            world.getController());
+                } else {
+                    regenerate();
+                }
             }
 
             // ---- editor keys ----
@@ -341,15 +359,26 @@ public class Window {
                 if (input != null) input.resyncMouse();
                 world.getController().resyncMouseIfNeeded();
             }
-            // E = inventory (only meaningful in edit mode)
+            // E = inventory (edit builder OR survival bag)
             if (keyPressed(GLFW.GLFW_KEY_E)) {
                 if (editor.isActive()) {
                     builderUI.toggleInventory();
                     if (input != null) {
-                        // free cursor to click inventory; lock again when closed
                         input.setCursorDisabled(!builderUI.isInventoryOpen());
                         world.getController().resyncMouseIfNeeded();
                     }
+                } else if (survival.isSurvival()) {
+                    survivalInv.toggle();
+                    if (input != null) {
+                        input.setCursorDisabled(!survivalInv.isOpen());
+                        world.getController().resyncMouseIfNeeded();
+                    }
+                }
+            }
+            // 1-9 hotbar select in survival
+            if (survival.isSurvival() && !editor.isActive()) {
+                for (int k = 0; k < 9; k++) {
+                    if (keyPressed(GLFW.GLFW_KEY_1 + k)) survivalInv.setSelectedHot(k);
                 }
             }
             if (keyPressed(GLFW.GLFW_KEY_F3)) {
@@ -422,7 +451,22 @@ public class Window {
                 }
             }
 
-            world.update(window, dt);
+            if (!(survival.isSurvival() && survival.isDead())) {
+                world.update(window, dt);
+            }
+            survival.updateFallDamage(world.getController());
+            if (!mainMenu.getScreen().name().equals("TITLE") && !editor.isActive()) {
+                enemies.update(dt, world.getController(), survival, terrain);
+                // LMB melee attack in survival / play
+                if (input != null && input.mousePressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                        && !survivalInv.isOpen() && !worldMap.isFullMapOpen()) {
+                    var pos = world.getController().getPlayerPos();
+                    float yaw = world.getCamera().getYaw();
+                    if (enemies.tryPlayerAttack(pos.x, pos.y, pos.z, yaw)) {
+                        // hit feedback could go here
+                    }
+                }
+            }
             // Keep solid AABBs in sync with placed entities
             world.getCollision().rebuildFromEntities(editor.getEntities());
             if (editor.isActive()) editor.update(world.getCamera());
@@ -435,6 +479,7 @@ public class Window {
                     terrain, cam.getX(), cam.getZ());
             boolean underwater = cam.getY() < waterLevel
                     && WorldGenerator.sampleHeight(terrain, cam.getX(), cam.getZ()) < waterLevel;
+            if (pc.isSwimming()) underwater = true;
 
             float sr = 0.48f, sg = 0.64f, sb = 0.92f;
             if (under == WorldGenerator.Biome.DESERT || under == WorldGenerator.Biome.SAVANNA) {
@@ -444,7 +489,15 @@ public class Window {
             } else if (under == WorldGenerator.Biome.VOLCANIC) {
                 sr = 0.22f; sg = 0.18f; sb = 0.20f;
             }
-            if (underwater) { sr = 0.03f; sg = 0.12f; sb = 0.25f; }
+            if (underwater) {
+                if (under == WorldGenerator.Biome.CORAL_REEF) {
+                    sr = 0.05f; sg = 0.25f; sb = 0.35f; // teal tropical
+                } else if (under == WorldGenerator.Biome.LAKE) {
+                    sr = 0.04f; sg = 0.15f; sb = 0.22f;
+                } else {
+                    sr = 0.03f; sg = 0.12f; sb = 0.25f;
+                }
+            }
             GL11.glClearColor(sr, sg, sb, 1f);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
 
@@ -454,6 +507,7 @@ public class Window {
             float rdist = settings.renderDistanceIsMax() ? 400f : settings.renderDistance();
             terrainChunks.render(renderer, assets, cam.getX(), cam.getY(), cam.getZ(), rdist);
             renderer.renderTrees(treeField, treeMeshes, assets);
+            enemies.render(renderer);
             renderer.renderLandscapeFeatures(landscapeFeatures, assets);
             // structure parts — textured when texKey set; two-sided walls keep both faces
             Mesh cube = StructureGenerator.unitCube();
@@ -522,7 +576,12 @@ public class Window {
                         + "  " + (pc.isFlying() ? "[FLYING]" : "[WALK]")
                         + (underwater ? "  [UNDERWATER]" : ""),
                         underwater ? 0.4f : 1f, underwater ? 0.8f : 1f, 1f, 1f);
-                hud.text(10, 58, "TAB edit  E inv  WASD  Space jump  Ctrl sprint  Shift sneak  F fly  F5/C cam  F3 debug  R regen", 0.8f, 0.8f, 0.8f, 1f);
+                String help = survival.isCreative()
+                        ? "TAB edit  E inv  WASD  Space jump  Ctrl sprint  Shift sneak  F fly  F5/C cam  F3 debug  R regen"
+                        : "SURVIVAL  WASD  Space jump  Ctrl sprint  Shift sneak  F5/C cam  F3 debug  R respawn/regen";
+                hud.text(10, 58, help, 0.8f, 0.8f, 0.8f, 1f);
+                hud.text(10, 74, survival.isCreative() ? "MODE CREATIVE" : "MODE SURVIVAL",
+                        0.35f, 1f, 0.45f, 1f);
             }
             // Crosshair always in first-person (build + play)
             if (!pc.isThirdPerson()) {
@@ -530,10 +589,28 @@ public class Window {
                 hud.rect(640 - 1, 360 - 10, 2, 20, 1, 1, 1, 0.9f);
             }
 
-            // health bar, bottom center (placeholder in play mode)
-            if (!editor.isActive()) {
+            // Survival inventory + hotbar
+            if (!editor.isActive() && survival.isSurvival()) {
+                survivalInv.draw(hud, 1280, 720);
+                if (survivalInv.isOpen() && input != null
+                        && input.mousePressed(GLFW.GLFW_MOUSE_BUTTON_LEFT)) {
+                    survivalInv.handleClick((float) input.mouseX(), (float) input.mouseY());
+                }
+            }
+
+            // health bar — Survival mode only
+            if (!editor.isActive() && survival.isSurvival()) {
+                float ratio = survival.hpRatio();
                 hud.rect(1280 / 2f - 102, 700, 204, 16, 0.05f, 0.05f, 0.05f, 0.8f);
-                hud.rect(1280 / 2f - 100, 702, 200, 12, 0.75f, 0.15f, 0.15f, 1f);
+                hud.rect(1280 / 2f - 100, 702, 200 * ratio, 12, 0.75f, 0.15f, 0.15f, 1f);
+                hud.text(1280 / 2f - 30, 682,
+                        String.format("HP %.0f/%.0f", survival.hp(), survival.maxHp()),
+                        0.9f, 0.35f, 0.35f, 1f);
+                if (survival.isDead()) {
+                    hud.rect(0, 0, 1280, 720, 0.05f, 0, 0, 0.55f);
+                    hud.text(520, 340, "YOU DIED", 1f, 0.2f, 0.2f, 1f);
+                    hud.text(460, 380, "Press R to respawn", 0.8f, 0.8f, 0.8f, 1f);
+                }
             }
 
             if (underwater && settings.transparency) {   // full-screen alpha quad: fill-rate heavy, opt-in
@@ -630,7 +707,20 @@ public class Window {
         builderUI.setInventoryOpen(false);
     }
 
+    private void loadSpawnersFromStructures() {
+        enemies.clear();
+        for (float[] m : structureGen.getSpawnerMarks()) {
+            int ord = (int) m[3];
+            com.toyzbuilder.world.EnemySystem.MobType t =
+                    com.toyzbuilder.world.EnemySystem.MobType.values()[
+                            Math.max(0, Math.min(2, ord))];
+            enemies.addSpawner(m[0], m[1], m[2], t, 2 + (ord == 1 ? 1 : 0));
+        }
+        System.out.println("[Enemies] spawners=" + enemies.getSpawners().size());
+    }
+
     private void regenerateFromSettings(WorldGenerator.Settings cfg) {
+
         long t0 = System.nanoTime();
         terrain = new WorldGenerator(cfg).generate();
         if (terrainChunks != null) terrainChunks.cleanup();
@@ -643,7 +733,9 @@ public class Window {
         treeField.generate(terrain, cfg.seed);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
         world.setTerrain(terrain);
+        world.getController().setWaterLevel(cfg.waterLevel);
         world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        loadSpawnersFromStructures();
         editor.setTerrain(terrain);
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
         world.getController().setPlayerPos(0, Math.max(spawnGround, cfg.waterLevel), 0);
@@ -669,6 +761,7 @@ public class Window {
         structureGen.generate(terrain, cfg.seed);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
         world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        loadSpawnersFromStructures();
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
         world.getController().setPlayerPos(0, Math.max(spawnGround, cfg.waterLevel), 0);
         System.out.println("[Explore] regen seed=" + cfg.seed
