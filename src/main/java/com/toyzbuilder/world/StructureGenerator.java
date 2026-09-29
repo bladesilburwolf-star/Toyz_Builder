@@ -77,12 +77,15 @@ public final class StructureGenerator {
         Random rng = new Random(seed ^ 0x53545255L); // "STRU"
         float half = terrain.size * 0.5f;
         float water = terrain.settings.waterLevel + 1.0f;
-        float margin = 40f;
+        // Keep the largest (dungeon) footprint and its relief samples inside
+        // the generated terrain patch.
+        float margin = 52f;
 
         float area = terrain.size * terrain.size;
-        int target = Math.max(4, Math.min(18, (int) (area / 18000f)));
+        // Slightly more landmarks on larger maps
+        int target = Math.max(5, Math.min(22, (int) (area / 14000f)));
 
-        int attempts = target * 40;
+        int attempts = target * 50;
         int placed = 0;
         for (int a = 0; a < attempts && placed < target; a++) {
             float x = -half + margin + rng.nextFloat() * (terrain.size - margin * 2);
@@ -90,19 +93,32 @@ public final class StructureGenerator {
             float y = WorldGenerator.sampleHeight(terrain, x, z);
             if (y < water) continue;
 
-            float dy = Math.abs(WorldGenerator.sampleHeight(terrain, x + 4, z) - y)
-                    + Math.abs(WorldGenerator.sampleHeight(terrain, x, z + 4) - y);
-            if (dy > 4.5f) continue;
+            Biome bio = WorldGenerator.sampleBiome(terrain, x, z);
+            StructureSite.Type type = pickType(rng, bio);
+            // Check the whole build footprint. A center-only slope test lets
+            // large plazas and dungeon rooms cut through hillsides.
+            float footprint = switch (type) {
+                case TOWN -> 22f;
+                case DUNGEON -> 48f;
+                case FORT -> 14f;
+                case TOMB -> 10f;
+                case SHRINE -> 6f;
+            };
+            float maxRelief = switch (type) {
+                case TOWN -> 2.5f;
+                case DUNGEON -> 4f;
+                default -> 3f;
+            };
+            if (!hasBuildableFootprint(terrain, x, z, footprint, maxRelief)) continue;
 
             boolean near = false;
             for (StructureSite s : sites) {
                 float dx = s.x - x, dz = s.z - z;
-                if (dx * dx + dz * dz < 55f * 55f) { near = true; break; }
+                // larger separation for big dungeons / towns
+                if (dx * dx + dz * dz < 75f * 75f) { near = true; break; }
             }
             if (near) continue;
 
-            Biome bio = WorldGenerator.sampleBiome(terrain, x, z);
-            StructureSite.Type type = pickType(rng, bio);
             float yaw = rng.nextInt(4) * 90f;
             float padY = y + 0.15f;
             String name = (type == StructureSite.Type.TOMB ? "Graveyard" : type.label) + " " + (placed + 1);
@@ -140,6 +156,23 @@ public final class StructureGenerator {
                 + " parts=" + parts.size()
                 + " solid=" + solidCount
                 + " warps=" + warps.size());
+    }
+
+    private static boolean hasBuildableFootprint(Result terrain, float x, float z,
+                                                  float radius, float maxRelief) {
+        float min = Float.POSITIVE_INFINITY;
+        float max = Float.NEGATIVE_INFINITY;
+        // A five by five grid catches broad slopes and local ridges while
+        // remaining cheap during landmark placement.
+        for (int iz = -2; iz <= 2; iz++) {
+            for (int ix = -2; ix <= 2; ix++) {
+                float h = WorldGenerator.sampleHeight(terrain,
+                        x + radius * ix * 0.5f, z + radius * iz * 0.5f);
+                min = Math.min(min, h);
+                max = Math.max(max, h);
+            }
+        }
+        return max - min <= maxRelief;
     }
 
     private static StructureSite.Type pickType(Random rng, Biome bio) {
@@ -346,11 +379,14 @@ public final class StructureGenerator {
 
     // ========================== DUNGEON ===========================
 
-    private static final float DG_CELL = 16f;
-    private static final float DG_WALL_T = 0.6f;
-    private static final float DG_WALL_H = 5f;
-    private static final float DG_DOOR_W = 4f;
-    private static final float DG_DOOR_H = 3f;
+    // Daggerfall-ish scale: larger cells, more rooms on a bigger grid
+    private static final float DG_CELL = 20f;
+    private static final float DG_WALL_T = 0.65f;
+    private static final float DG_WALL_H = 5.5f;
+    private static final float DG_DOOR_W = 4.5f;
+    private static final float DG_DOOR_H = 3.2f;
+    private static final int DG_GRID = 5; // 5x5 cell grid (was 3x3)
+
 
     private void buildDungeon(StructureSite s, Random rng) {
         float floorR = 0.35f, floorG = 0.35f, floorB = 0.38f;
@@ -362,16 +398,18 @@ public final class StructureGenerator {
         float ceilCY = floorTop + DG_WALL_H + 0.25f;
         float edge = DG_CELL * 0.5f - DG_WALL_T * 0.5f;
 
-        // ---- 1. branching room tree on a 3x3 grid ----
+        // ---- 1. branching room tree on DG_GRID x DG_GRID (Daggerfall-scale) ----
+        int G = DG_GRID;
+        int mid = G / 2;
         Set<Long> used = new HashSet<>();
         List<int[]> rooms = new ArrayList<>();   // {gx, gz, depth}
         List<int[]> links = new ArrayList<>();   // {ax, az, bx, bz}
-        used.add(gridKey(1, 1));
-        rooms.add(new int[]{1, 1, 0});
+        used.add(gridKey(mid, mid));
+        rooms.add(new int[]{mid, mid, 0});
         ArrayDeque<int[]> queue = new ArrayDeque<>();
-        queue.add(new int[]{1, 1, 0});
-        int maxRooms = 4 + rng.nextInt(2);        // 4-5 rooms
-        int maxDepth = 2 + rng.nextInt(2);         // branch depth 2-3
+        queue.add(new int[]{mid, mid, 0});
+        int maxRooms = 8 + rng.nextInt(5);         // 8-12 rooms
+        int maxDepth = 3 + rng.nextInt(3);         // depth 3-5
         while (rooms.size() < maxRooms && !queue.isEmpty()) {
             int[] cur = queue.poll();
             if (cur[2] >= maxDepth) continue;
@@ -380,11 +418,11 @@ public final class StructureGenerator {
                 int j = rng.nextInt(i + 1);
                 int[] t = dirs[i]; dirs[i] = dirs[j]; dirs[j] = t;
             }
-            int branches = 2 + rng.nextInt(2);
+            int branches = 1 + rng.nextInt(3);
             for (int i = 0; i < dirs.length && branches > 0 && rooms.size() < maxRooms; i++) {
                 int nx = cur[0] + dirs[i][0];
                 int nz = cur[1] + dirs[i][1];
-                if (nx < 0 || nx > 2 || nz < 0 || nz > 2) continue;
+                if (nx < 0 || nx >= G || nz < 0 || nz >= G) continue;
                 if (used.add(gridKey(nx, nz))) {
                     rooms.add(new int[]{nx, nz, cur[2] + 1});
                     links.add(new int[]{cur[0], cur[1], nx, nz});
@@ -395,7 +433,7 @@ public final class StructureGenerator {
         }
 
         // link lookup: dir 0=N(-z) 1=S(+z) 2=W(-x) 3=E(+x)
-        boolean[][][] conn = new boolean[3][3][4];
+        boolean[][][] conn = new boolean[G][G][4];
         for (int[] l : links) {
             if (l[3] == l[1] + 1) { conn[l[0]][l[1]][1] = true; conn[l[2]][l[3]][0] = true; }
             else if (l[3] == l[1] - 1) { conn[l[0]][l[1]][0] = true; conn[l[2]][l[3]][1] = true; }
@@ -408,8 +446,8 @@ public final class StructureGenerator {
 
         // ---- 2. rooms: solid floor, ceiling, walls with door gaps ----
         for (int[] r : rooms) {
-            float bx = (r[0] - 1) * DG_CELL;
-            float bz = (r[1] - 1) * DG_CELL;
+            float bx = (r[0] - mid) * DG_CELL;
+            float bz = (r[1] - mid) * DG_CELL;
             float[] c = localToWorld(s, bx, bz);
             texPart(c[0], baseY + 0.2f, c[1], DG_CELL, 0.4f, DG_CELL, s.yaw,
                     floorR, floorG, floorB, "CONCRETE", false);
@@ -427,8 +465,8 @@ public final class StructureGenerator {
 
         // ---- 3. corridors: floor, side walls, ceiling ----
         for (int[] l : links) {
-            float ax = (l[0] - 1) * DG_CELL, az = (l[1] - 1) * DG_CELL;
-            float bx2 = (l[2] - 1) * DG_CELL, bz2 = (l[3] - 1) * DG_CELL;
+            float ax = (l[0] - mid) * DG_CELL, az = (l[1] - mid) * DG_CELL;
+            float bx2 = (l[2] - mid) * DG_CELL, bz2 = (l[3] - mid) * DG_CELL;
             float mx = (ax + bx2) * 0.5f, mz = (az + bz2) * 0.5f;
             boolean xLink = bx2 != ax;
             float wSpan = DG_DOOR_W + DG_WALL_T * 2f;
@@ -471,7 +509,7 @@ public final class StructureGenerator {
         deco(pad[0], baseY + 0.45f, pad[1], 4f, 0.12f, 4f, s.yaw, 0.2f, 0.9f, 1f);
         dungeonEntrances.put(s.name, new float[]{pad[0], baseY, pad[1]});
 
-        float[] dw = localToWorld(s, (deepest[0] - 1) * DG_CELL, (deepest[1] - 1) * DG_CELL);
+        float[] dw = localToWorld(s, (deepest[0] - mid) * DG_CELL, (deepest[1] - mid) * DG_CELL);
         deco(dw[0], baseY + 0.55f, dw[1], 4f, 0.12f, 4f, s.yaw, 1f, 0.6f, 0.15f);
         // treasure chest marker in the deepest room
         deco(dw[0], floorTop + 0.55f, dw[1] + 2f, 1.1f, 1.0f, 1.1f, s.yaw, 0.85f, 0.65f, 0.15f);
@@ -532,103 +570,155 @@ public final class StructureGenerator {
     // ============================ TOWN ============================
 
     private void buildTown(StructureSite s, Random rng) {
-        // Plaza + street ring of real houses with door gaps, textured two-sided walls,
-        // and door warps that snap the player just inside / outside.
-        float plaza = 28f;
-        texPart(s.x, s.y + 0.12f, s.z, plaza, 0.3f, plaza, s.yaw,
-                0.55f, 0.5f, 0.42f, "PLANKS", false);
+        // Plaza + road grid + variety of houses (cottage / house / shop / tavern)
+        float woodR = 0.55f, woodG = 0.42f, woodB = 0.28f;
+        float stoneR = 0.55f, stoneG = 0.52f, stoneB = 0.48f;
 
-        // Central well ring (solid) — glowing water + warp added in generate()
-        texPart(s.x, s.y + 0.55f, s.z, 2.2f, 1.0f, 2.2f, s.yaw,
-                0.5f, 0.5f, 0.55f, "STONE", false);
+        // large plaza floor
+        texPart(s.x, s.y + 0.12f, s.z, 36f, 0.28f, 36f, s.yaw, 0.5f, 0.48f, 0.44f, "CONCRETE", false);
 
-        int n = 5 + rng.nextInt(3); // 5–7 houses
-        float radius = 10.5f;
-        for (int i = 0; i < n; i++) {
-            float ang = (float) (i * Math.PI * 2.0 / n + Math.toRadians(s.yaw));
-            float hx = s.x + (float) Math.cos(ang) * radius;
-            float hz = s.z + (float) Math.sin(ang) * radius;
-            // face the plaza center
-            float faceYaw = (float) Math.toDegrees(Math.atan2(s.x - hx, s.z - hz));
-            // snap to 90° for collision swap
-            faceYaw = Math.round(faceYaw / 90f) * 90f;
-            buildHouse(hx, s.y, hz, faceYaw, 4.5f + rng.nextFloat() * 1.5f, rng);
+        // cross roads
+        texPart(s.x, s.y + 0.18f, s.z, 36f, 0.12f, 4.5f, s.yaw, 0.4f, 0.38f, 0.35f, "ROCK", false);
+        texPart(s.x, s.y + 0.18f, s.z, 4.5f, 0.12f, 36f, s.yaw, 0.4f, 0.38f, 0.35f, "ROCK", false);
+
+        // central well / fountain
+        texPart(s.x, s.y + 0.7f, s.z, 3.2f, 1.1f, 3.2f, s.yaw, stoneR, stoneG, stoneB, "STONE", false);
+        deco(s.x, s.y + 1.35f, s.z, 2.2f, 0.15f, 2.2f, s.yaw, 0.25f, 0.55f, 0.85f);
+
+        // House lots on a ring — 8–12 buildings
+        // layout: positions in local XZ relative to town center
+        float[][] lots = {
+            // outer ring
+            {-12f, -12f}, {0f, -14f}, {12f, -12f},
+            {-14f, 0f},               {14f, 0f},
+            {-12f, 12f},  {0f, 14f},  {12f, 12f},
+            // inner near plaza
+            {-7f, -7f}, {7f, -7f}, {-7f, 7f}, {7f, 7f},
+        };
+        int houseCount = 8 + rng.nextInt(5); // 8-12
+        for (int i = 0; i < houseCount && i < lots.length; i++) {
+            float lx = lots[i][0] + (rng.nextFloat() - 0.5f) * 1.5f;
+            float lz = lots[i][1] + (rng.nextFloat() - 0.5f) * 1.5f;
+            float[] w = localToWorld(s, lx, lz);
+            // face toward plaza roughly
+            float yaw = s.yaw;
+            if (Math.abs(lx) > Math.abs(lz)) {
+                yaw = s.yaw + (lx > 0 ? 270f : 90f);
+            } else {
+                yaw = s.yaw + (lz > 0 ? 180f : 0f);
+            }
+            yaw = (Math.round(yaw / 90f) & 3) * 90f;
+
+            int style = rng.nextInt(4); // 0 cottage 1 house 2 shop 3 tavern
+            float size;
+            String wallTex;
+            float wr, wg, wb;
+            switch (style) {
+                case 0 -> { // cottage
+                    size = 5.5f + rng.nextFloat() * 1.5f;
+                    wallTex = "PLANKS";
+                    wr = woodR; wg = woodG; wb = woodB;
+                }
+                case 2 -> { // shop (stone front)
+                    size = 7f + rng.nextFloat() * 1.5f;
+                    wallTex = "STONE";
+                    wr = stoneR; wg = stoneG; wb = stoneB;
+                }
+                case 3 -> { // tavern (larger wood)
+                    size = 8.5f + rng.nextFloat() * 1.5f;
+                    wallTex = "PLANKS";
+                    wr = woodR * 0.9f; wg = woodG * 0.85f; wb = woodB;
+                }
+                default -> { // house
+                    size = 6.5f + rng.nextFloat() * 2f;
+                    wallTex = "PLANKS";
+                    wr = woodR; wg = woodG; wb = woodB;
+                }
+            }
+            buildHouse(w[0], s.y, w[1], yaw, size, rng, wallTex, wr, wg, wb, style);
         }
 
-        // short market stalls on plaza (open, thin counters)
+        // market stalls near center (decorative)
         for (int i = 0; i < 3; i++) {
-            float ang = (float) (i * Math.PI * 2.0 / 3.0 + 0.4);
-            float sx = s.x + (float) Math.cos(ang) * 4.5f;
-            float sz = s.z + (float) Math.sin(ang) * 4.5f;
-            texPart(sx, s.y + 0.7f, sz, 2.4f, 0.15f, 1.0f, s.yaw,
-                    0.55f, 0.38f, 0.22f, "PLANKS", true);
-            texPart(sx, s.y + 1.6f, sz, 0.2f, 1.6f, 0.2f, s.yaw,
-                    0.45f, 0.3f, 0.18f, "BARK", false);
-            texPart(sx + 1.0f, s.y + 1.6f, sz, 0.2f, 1.6f, 0.2f, s.yaw,
-                    0.45f, 0.3f, 0.18f, "BARK", false);
+            float ang = i * 2.1f;
+            float lx = (float) Math.cos(ang) * 5.5f;
+            float lz = (float) Math.sin(ang) * 5.5f;
+            float[] w = localToWorld(s, lx, lz);
+            deco(w[0], s.y + 1.0f, w[1], 2.2f, 1.8f, 1.4f, s.yaw + i * 40f, 0.5f, 0.35f, 0.2f, "PLANKS");
         }
     }
 
-    /**
-     * Hollow house: floor, roof, 4 thin two-sided walls with a door gap on the front.
-     * Door gets inbound + outbound warps so entry is reliable even with tight collision.
-     */
     private void buildHouse(float hx, float hy, float hz, float yaw, float size, Random rng) {
-        float wallT = 0.35f;   // thin 2D-ish walls
-        float wallH = 3.4f;
-        float doorW = 1.6f;
-        float floorY = hy + 0.15f;
-        float wallCY = hy + wallH * 0.5f + 0.15f;
-        float roofY = hy + wallH + 0.4f;
-        float woodR = 0.62f, woodG = 0.42f, woodB = 0.24f;
-        float roofR = 0.45f, roofG = 0.28f, roofB = 0.16f;
+        buildHouse(hx, hy, hz, yaw, size, rng, "PLANKS", 0.55f, 0.42f, 0.28f, 1);
+    }
 
-        // floor + roof
-        texPart(hx, floorY, hz, size, 0.28f, size, yaw, woodR * 0.85f, woodG * 0.85f, woodB * 0.85f, "PLANKS", false);
-        texPart(hx, roofY, hz, size + 0.6f, 0.35f, size + 0.6f, yaw, roofR, roofG, roofB, "BARK", false);
-
-        // local offsets: front is +Z in local before yaw
-        // walls: back (-Z), left (-X), right (+X), front (+Z) with door gap
+    private void buildHouse(float hx, float hy, float hz, float yaw, float size, Random rng,
+                            String wallTex, float woodR, float woodG, float woodB, int style) {
+        float wallT = 0.4f;
+        float wallH = style == 3 ? 4.2f : (style == 0 ? 3.2f : 3.6f);
         float half = size * 0.5f;
+        float doorW = style == 2 ? 3.2f : 2.4f;
+
+        // floor pad
+        texPart(hx, hy + 0.12f, hz, size + 0.4f, 0.28f, size + 0.4f, yaw, 0.45f, 0.4f, 0.35f, "CONCRETE", false);
+
+        // roof slab
+        float roofY = hy + wallH + 0.35f;
+        texPart(hx, roofY, hz, size + 0.8f, 0.45f, size + 0.8f, yaw, 0.35f, 0.22f, 0.15f, "BARK", false);
+
+        // optional second story block for taverns
+        if (style == 3) {
+            texPart(hx, hy + wallH * 0.55f, hz, size * 0.85f, wallH * 0.5f, size * 0.85f, yaw,
+                    woodR * 0.95f, woodG * 0.95f, woodB, wallTex, false);
+        }
+
+        float wallCY = hy + wallH * 0.5f + 0.15f;
+
+        // back / left / right walls
         float[] back = localToWorldAt(hx, hz, yaw, 0, -half);
         float[] left = localToWorldAt(hx, hz, yaw, -half, 0);
         float[] right = localToWorldAt(hx, hz, yaw, half, 0);
-        float[] front = localToWorldAt(hx, hz, yaw, 0, half);
+        texPart(back[0], wallCY, back[1], size, wallH, wallT, yaw, woodR, woodG, woodB, wallTex, true);
+        texPart(left[0], wallCY, left[1], wallT, wallH, size, yaw, woodR, woodG, woodB, wallTex, true);
+        texPart(right[0], wallCY, right[1], wallT, wallH, size, yaw, woodR, woodG, woodB, wallTex, true);
 
-        // back wall (full)
-        texPart(back[0], wallCY, back[1], size, wallH, wallT, yaw, woodR, woodG, woodB, "PLANKS", true);
-        // left / right
-        texPart(left[0], wallCY, left[1], wallT, wallH, size, yaw, woodR, woodG, woodB, "PLANKS", true);
-        texPart(right[0], wallCY, right[1], wallT, wallH, size, yaw, woodR, woodG, woodB, "PLANKS", true);
-
-        // front wall with door gap (two segments + lintel)
+        // front wall with door gap
         float segLen = (size - doorW) * 0.5f;
         float segOff = (doorW + segLen) * 0.5f;
         float[] fL = localToWorldAt(hx, hz, yaw, -segOff, half);
         float[] fR = localToWorldAt(hx, hz, yaw, segOff, half);
-        texPart(fL[0], wallCY, fL[1], segLen, wallH, wallT, yaw, woodR, woodG, woodB, "PLANKS", true);
-        texPart(fR[0], wallCY, fR[1], segLen, wallH, wallT, yaw, woodR, woodG, woodB, "PLANKS", true);
-        // lintel
+        texPart(fL[0], wallCY, fL[1], segLen, wallH, wallT, yaw, woodR, woodG, woodB, wallTex, true);
+        texPart(fR[0], wallCY, fR[1], segLen, wallH, wallT, yaw, woodR, woodG, woodB, wallTex, true);
         float lintelH = 0.55f;
         float lintelCY = hy + wallH - lintelH * 0.5f + 0.15f;
         float[] fC = localToWorldAt(hx, hz, yaw, 0, half);
-        texPart(fC[0], lintelCY, fC[1], doorW, lintelH, wallT, yaw, woodR * 0.9f, woodG * 0.9f, woodB, "PLANKS", true);
+        texPart(fC[0], lintelCY, fC[1], doorW, lintelH, wallT, yaw, woodR * 0.9f, woodG * 0.9f, woodB, wallTex, true);
 
-        // door slab (decorative, not solid) — marks the opening
+        // door slab decorative
         deco(fC[0], hy + 1.4f, fC[1], doorW * 0.9f, 2.5f, 0.12f, yaw, 0.25f, 0.15f, 0.08f, "BARK");
 
-        // interior target (center of house) and exterior pad just outside door
+        // chimney on houses / taverns
+        if (style == 1 || style == 3) {
+            float[] ch = localToWorldAt(hx, hz, yaw, half * 0.55f, -half * 0.55f);
+            texPart(ch[0], hy + wallH + 1.0f, ch[1], 0.7f, 1.8f, 0.7f, yaw, 0.4f, 0.38f, 0.36f, "STONE", false);
+        }
+
+        // shop awning
+        if (style == 2) {
+            float[] aw = localToWorldAt(hx, hz, yaw, 0, half + 0.6f);
+            deco(aw[0], hy + 2.4f, aw[1], size * 0.7f, 0.15f, 1.2f, yaw, 0.6f, 0.15f, 0.15f);
+        }
+
+        // interior / exterior door warps
         float[] inside = localToWorldAt(hx, hz, yaw, 0, 0);
         float[] outside = localToWorldAt(hx, hz, yaw, 0, half + 1.4f);
         float feetY = hy + 0.4f;
-        // door warps: outside -> inside, inside -> outside
         warps.add(new Warp(outside[0], feetY, outside[1], 1.5f,
                 inside[0], feetY, inside[1],
                 "Enter house", 0.2f, 0.9f, 1f));
         warps.add(new Warp(inside[0], feetY, inside[1], 1.3f,
                 outside[0], feetY, outside[1],
                 "Exit house", 1f, 0.6f, 0.15f));
-        // small glow markers at door (no collision)
         deco(outside[0], hy + 0.35f, outside[1], 1.2f, 0.08f, 1.2f, yaw, 0.2f, 0.9f, 1f);
         deco(inside[0], hy + 0.35f, inside[1], 1.0f, 0.08f, 1.0f, yaw, 1f, 0.55f, 0.15f);
     }

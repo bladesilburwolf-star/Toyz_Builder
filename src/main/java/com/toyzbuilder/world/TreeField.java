@@ -35,7 +35,7 @@ public final class TreeField {
         if (terrain == null) return;
         Random rng = new Random(seed ^ 0x7EE5L);
         float half = terrain.size * 0.5f;
-        float step = 14f; // spacing — raise to reduce density / cost
+        float step = 18f; // spacing — raise to reduce density / cost
         float water = terrain.settings.waterLevel + 0.8f;
 
         for (float z = -half + step; z < half - step; z += step) {
@@ -65,12 +65,16 @@ public final class TreeField {
     private static Kind kindFor(WorldGenerator.Biome bio, Random rng) {
         return switch (bio) {
             case FOREST -> rng.nextFloat() < 0.85f ? (rng.nextFloat() < 0.3f ? Kind.BIRCH : Kind.OAK) : null;
-            case JUNGLE -> rng.nextFloat() < 0.9f ? Kind.OAK : null;
+            case REDWOOD -> rng.nextFloat() < 0.75f ? Kind.OAK : null;
+            case DARK_FOREST -> rng.nextFloat() < 0.7f ? Kind.OAK : null;
+            case BAMBOO, JUNGLE -> rng.nextFloat() < 0.9f ? Kind.OAK : null;
             case TAIGA -> rng.nextFloat() < 0.8f ? Kind.PINE : null;
-            case SNOW, ALPINE -> rng.nextFloat() < 0.45f ? Kind.SNOW : null;
-            case MEADOW, HIGHLANDS -> rng.nextFloat() < 0.18f ? Kind.OAK : null;
-            case SWAMP -> rng.nextFloat() < 0.35f ? Kind.OAK : null;
-            default -> null; // desert, ocean, beach, volcanic, etc.
+            case SNOW, ALPINE, TUNDRA, GLACIER -> rng.nextFloat() < 0.4f ? Kind.SNOW : null;
+            case FROZEN_FOREST, CEDAR_HIGHLANDS -> rng.nextFloat() < 0.65f ? Kind.PINE : null;
+            case MANGROVE, WILLOW_WETLAND -> rng.nextFloat() < 0.55f ? Kind.OAK : null;
+            case MEADOW, HIGHLANDS, PRAIRIE, FLOODPLAIN, STEPPE -> rng.nextFloat() < 0.15f ? Kind.OAK : null;
+            case SWAMP, MARSH, MUSHROOM, OASIS, PALM_COAST -> rng.nextFloat() < 0.35f ? Kind.OAK : null;
+            default -> null;
         };
     }
 }

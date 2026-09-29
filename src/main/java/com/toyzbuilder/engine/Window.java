@@ -7,6 +7,7 @@ import com.toyzbuilder.world.WorldGenerator;
 import com.toyzbuilder.world.TreeField;
 import com.toyzbuilder.world.StructureGenerator;
 import com.toyzbuilder.world.StructureSite;
+import com.toyzbuilder.world.TerrainChunks;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
@@ -38,7 +39,8 @@ public class Window {
     private BuilderUI builderUI;
     private MainMenu mainMenu;
     private boolean inMenu = true;
-    private Mesh terrainMesh;
+    private TerrainChunks terrainChunks;
+    private Mesh terrainMesh; // legacy unused when chunks active
     private Mesh waterMesh;
     private Mesh playerMesh;
     private WorldGenerator.Result terrain;
@@ -53,6 +55,7 @@ public class Window {
     public void run() {
         init();
         loop();
+        if (terrainChunks != null) terrainChunks.cleanup();
         if (terrainMesh != null) terrainMesh.cleanup();
         if (waterMesh != null) waterMesh.cleanup();
         if (playerMesh != null) playerMesh.cleanup();
@@ -97,17 +100,16 @@ public class Window {
 
         WorldGenerator.Settings cfg = new WorldGenerator.Settings();
         cfg.seed = (int) (System.currentTimeMillis() & 0x7fffffff);
-        cfg.resolution = 257;
-        cfg.spacing = 2.5f;
+        cfg.resolution = 161;
+        cfg.spacing = 4.0f;
         cfg.heightScale = 32f;
         cfg.waterLevel = 5.0f;
+        cfg.worldSize = com.toyzbuilder.world.WorldBounds.MINETEST_WORLD_SIZE;
 
         long t0 = System.nanoTime();
         terrain = new WorldGenerator(cfg).generate();
-        terrainMesh = new Mesh(
-                WorldGenerator.buildVertexData(terrain),
-                WorldGenerator.buildIndices(terrain),
-                true);
+        terrainChunks = new TerrainChunks();
+        terrainChunks.build(terrain);
         waterMesh = buildWaterMesh(terrain);
         landscapeFeatures.generate(terrain, cfg.seed);
         structureGen.generate(terrain, cfg.seed);
@@ -115,7 +117,8 @@ public class Window {
         double ms = (System.nanoTime() - t0) / 1e6;
         System.out.println("[Explore] seed=" + cfg.seed
                 + " size=" + terrain.size
-                + " tris=" + (terrainMesh.indexCount() / 3)
+                + " chunks=" + terrainChunks.chunkCount()
+                + " tris=" + terrainChunks.totalTris()
                 + " gen+upload=" + String.format("%.1f", ms) + "ms"
                 + " | textures from assets/textures/");
 
@@ -448,7 +451,8 @@ public class Window {
             float aspect = 1280f / 720f;
             // fog fades into the sky colour we just cleared with
             renderer.beginFrame(cam, aspect, settings, sr, sg, sb, underwater);
-            renderer.renderTerrain(terrainMesh, assets);
+            float rdist = settings.renderDistanceIsMax() ? 400f : settings.renderDistance();
+            terrainChunks.render(renderer, assets, cam.getX(), cam.getY(), cam.getZ(), rdist);
             renderer.renderTrees(treeField, treeMeshes, assets);
             renderer.renderLandscapeFeatures(landscapeFeatures, assets);
             // structure parts — textured when texKey set; two-sided walls keep both faces
@@ -629,12 +633,10 @@ public class Window {
     private void regenerateFromSettings(WorldGenerator.Settings cfg) {
         long t0 = System.nanoTime();
         terrain = new WorldGenerator(cfg).generate();
-        if (terrainMesh != null) terrainMesh.cleanup();
+        if (terrainChunks != null) terrainChunks.cleanup();
         if (waterMesh != null) waterMesh.cleanup();
-        terrainMesh = new Mesh(
-                WorldGenerator.buildVertexData(terrain),
-                WorldGenerator.buildIndices(terrain),
-                true);
+        terrainChunks = new TerrainChunks();
+        terrainChunks.build(terrain);
         waterMesh = buildWaterMesh(terrain);
         landscapeFeatures.generate(terrain, cfg.seed);
         structureGen.generate(terrain, cfg.seed);
@@ -655,11 +657,9 @@ public class Window {
         cfg.seed = (int) (System.currentTimeMillis() & 0x7fffffff);
         long t0 = System.nanoTime();
         terrain = new WorldGenerator(cfg).generate();
-        if (terrainMesh != null) terrainMesh.cleanup();
-        terrainMesh = new Mesh(
-                WorldGenerator.buildVertexData(terrain),
-                WorldGenerator.buildIndices(terrain),
-                true);
+        if (terrainChunks != null) terrainChunks.cleanup();
+        terrainChunks = new TerrainChunks();
+        terrainChunks.build(terrain);
         world.setTerrain(terrain);
         editor.setTerrain(terrain);
         if (waterMesh != null) waterMesh.cleanup();

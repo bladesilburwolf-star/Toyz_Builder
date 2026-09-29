@@ -1,6 +1,12 @@
 @echo off
 cd /d "%~dp0"
 
+REM Kill leftover dumps that can eat hundreds of MB
+if exist "*.hprof" (
+    echo Removing old Java heap dumps...
+    del /q "*.hprof" 2>nul
+)
+
 echo Building ToyzBuilderWorldGen...
 call gradlew.bat build --quiet
 if %errorlevel% neq 0 (
@@ -12,11 +18,12 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo Running ToyzBuilderWorldGen...
+echo Running ToyzBuilderWorldGen  (heap capped at 512MB, no hprof dumps)
 echo Close the game window to return here.
 echo.
 
-REM No redirect — console stays live; nothing writes run.log
+REM No console redirect — nothing writes run.log
+set JAVA_TOOL_OPTIONS=
 call gradlew.bat run
 
 echo.

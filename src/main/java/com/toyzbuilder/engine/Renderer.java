@@ -500,35 +500,70 @@ public class Renderer {
         if (field == null || !gs.landscape) return;
         final float maxD = gs.renderDistance() * 0.6f;
         for (com.toyzbuilder.world.LandscapeFeatures.Instance f : field.getFeatures()) {
-            boolean large = f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.BOULDER_L;
+            boolean large = f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.BOULDER_L
+                    || f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.PILLAR;
             float rad = f.scale * (large ? 2.4f : 1.4f) + 0.5f;
             if (!visible(f.x, f.y + f.scale * 0.5f, f.z, rad, maxD)) continue;
 
-            String path;
-            Texture tex;
+            // Prefer GLB rocks/minerals; flora / extras use cheap colored cubes
             switch (f.kind) {
-                case BOULDER_L -> { path = "boulderlarge.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
-                case BOULDER_M -> { path = "bouldermedium.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
-                case BOULDER_S -> { path = "bouldersmall.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
-                case CRYSTAL -> { path = "crystalblock.glb"; tex = assets.get(AssetBank.Slot.CRYSTAL); }
-                case QUARTZ -> { path = "quartzblock.glb"; tex = assets.get(AssetBank.Slot.QUARTZ); }
-                case MAGMA -> { path = "magmablock.glb"; tex = assets.get(AssetBank.Slot.MAGMA); }
-                default -> { path = "bouldersmall.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
+                case BOULDER_L, BOULDER_M, BOULDER_S, CRYSTAL, QUARTZ, MAGMA -> {
+                    String path;
+                    Texture tex;
+                    switch (f.kind) {
+                        case BOULDER_L -> { path = "boulderlarge.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
+                        case BOULDER_M -> { path = "bouldermedium.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
+                        case BOULDER_S -> { path = "bouldersmall.glb"; tex = assets.get(AssetBank.Slot.ROCK); }
+                        case CRYSTAL -> { path = "crystalblock.glb"; tex = assets.get(AssetBank.Slot.CRYSTAL); }
+                        case QUARTZ -> { path = "quartzblock.glb"; tex = assets.get(AssetBank.Slot.QUARTZ); }
+                        default -> { path = "magmablock.glb"; tex = assets.get(AssetBank.Slot.MAGMA); }
+                    }
+                    Model model = Model.load(path);
+                    if (model == null) {
+                        drawPropCube(f, 0.45f, 0.42f, 0.38f);
+                        break;
+                    }
+                    float k = large ? 2.0f : 1.0f;
+                    float sx = k * f.scale / Math.max(.01f, model.sizeX);
+                    float sz = k * f.scale / Math.max(.01f, model.sizeZ);
+                    float sy = f.scale / Math.max(.01f, model.sizeY);
+                    if (f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.CRYSTAL
+                            || f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.QUARTZ
+                            || f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.MAGMA) {
+                        sy *= 0.8f;
+                    }
+                    renderTexturedModel(model, f.x, f.y + f.scale * .15f, f.z, sx, sy, sz, f.yaw,
+                            tex, 1f, 1f, 1f, 1f);
+                }
+                case CACTUS -> drawPropCube(f, 0.18f, 0.55f, 0.22f, 0.45f, 1.6f, 0.45f);
+                case BUSH -> drawPropCube(f, 0.15f, 0.40f, 0.12f, 0.9f, 0.55f, 0.9f);
+                case REED -> drawPropCube(f, 0.25f, 0.50f, 0.18f, 0.2f, 1.5f, 0.2f);
+                case STUMP -> drawPropCube(f, 0.35f, 0.22f, 0.10f, 0.55f, 0.45f, 0.55f);
+                case DEAD_LOG -> drawPropCube(f, 0.32f, 0.20f, 0.10f, 1.4f, 0.28f, 0.35f);
+                case ICE_SPIKE -> drawPropCube(f, 0.75f, 0.88f, 0.95f, 0.35f, 1.8f, 0.35f);
+                case DRIFTWOOD -> drawPropCube(f, 0.42f, 0.32f, 0.18f, 1.2f, 0.22f, 0.35f);
+                case MUSHROOM_CAP -> drawPropCube(f, 0.55f, 0.20f, 0.45f, 0.7f, 0.4f, 0.7f);
+                case BONE -> drawPropCube(f, 0.90f, 0.88f, 0.80f, 0.5f, 0.25f, 0.3f);
+                case PILLAR -> drawPropCube(f, 0.25f, 0.22f, 0.28f, 0.5f, 2.2f, 0.5f);
+                case SALT_CHUNK -> drawPropCube(f, 0.92f, 0.90f, 0.85f, 0.6f, 0.4f, 0.6f);
+                default -> drawPropCube(f, 0.45f, 0.42f, 0.38f);
             }
-            Model model = Model.load(path);
-            if (model == null) continue;
-            float k = large ? 2.0f : 1.0f;
-            float sx = k * f.scale / Math.max(.01f, model.sizeX);
-            float sz = k * f.scale / Math.max(.01f, model.sizeZ);
-            float sy = f.scale / Math.max(.01f, model.sizeY);
-            if (f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.CRYSTAL
-                    || f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.QUARTZ
-                    || f.kind == com.toyzbuilder.world.LandscapeFeatures.Kind.MAGMA) {
-                sy *= 0.8f;
-            }
-            renderTexturedModel(model, f.x, f.y + f.scale * .15f, f.z, sx, sy, sz, f.yaw,
-                    tex, 1f, 1f, 1f, 1f);
         }
+    }
+
+    private void drawPropCube(com.toyzbuilder.world.LandscapeFeatures.Instance f,
+                              float r, float g, float b) {
+        drawPropCube(f, r, g, b, 1f, 1f, 1f);
+    }
+
+    private void drawPropCube(com.toyzbuilder.world.LandscapeFeatures.Instance f,
+                              float r, float g, float b,
+                              float sxMul, float syMul, float szMul) {
+        Mesh cube = PrimitiveMeshes.uvCube();
+        float s = f.scale;
+        renderMesh(cube, f.x, f.y + s * syMul * 0.5f, f.z,
+                s * sxMul, s * syMul, s * szMul,
+                r, g, b, 1f);
     }
 
     // ------------------------------------------------------------------ generic draws

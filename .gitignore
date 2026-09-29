@@ -1,0 +1,26 @@
+# build / IDE
+.gradle/
+build/
+out/
+bin/
+.idea/
+*.iml
+.vscode/
+*.class
+
+# runtime junk — never commit
+run.log
+build.log
+*.log
+options.txt
+hs_err_pid*
+replay_pid*
+*.hprof
+java_*.hprof
+
+# large / local-only
+assets/
+**/assets/
+*.zip
+*.map
+screenshots/

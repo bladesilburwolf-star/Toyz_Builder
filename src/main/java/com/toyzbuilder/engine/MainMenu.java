@@ -30,7 +30,10 @@ public final class MainMenu {
     private static final String[] TITLE_ITEMS = {
             "New Game", "Continue", "Mods", "Shaders", "Options", "Quit"
     };
-    private static final String[] SIZE_LABELS = { "Small", "Medium", "Large" };
+    // Coarse grids (Daggerfall-ish). Tris ≈ (res-1)^2 * 2.
+    private static final String[] SIZE_LABELS = {
+            "Small (~384u)", "Medium (~640u)", "Large (~960u)"
+    };
     private static final String[] TYPE_LABELS = { "Normal", "Flat", "Amplified", "Islands" };
 
     private static final float G_R = 0.35f, G_G = 1.0f, G_B = 0.45f;
@@ -222,10 +225,14 @@ public final class MainMenu {
     /** Apply size/type presets onto generator settings. */
     public void applyTo(WorldGenerator.Settings cfg) {
         cfg.seed = seed == 0 ? (int) (System.currentTimeMillis() & 0x7fffffff) : seed;
+        // Lower poly mainland: fewer verts, larger spacing keeps map size useful.
+        // Old Medium was 257^2 verts ≈ 131k tris — too heavy for HD 6450.
+        // Larger maps OK — TerrainChunks only draws near the camera.
         switch (sizePreset) {
-            case 0 -> { cfg.resolution = 129; cfg.spacing = 2.0f; }
-            case 2 -> { cfg.resolution = 385; cfg.spacing = 2.0f; }
-            default -> { cfg.resolution = 257; cfg.spacing = 2.0f; }
+            case 0 -> { cfg.resolution = 97;  cfg.spacing = 4.0f; }  // size 384
+            case 2 -> { cfg.resolution = 193; cfg.spacing = 5.0f; }  // size 960
+            case 3 -> { cfg.resolution = 193; cfg.spacing = 5.0f; cfg.worldSize = com.toyzbuilder.world.WorldBounds.MINETEST_WORLD_SIZE; } // Minetest-scale logical world
+            default -> { cfg.resolution = 161; cfg.spacing = 4.0f; }  // size 640
         }
         switch (worldType) {
             case 1 -> { cfg.heightScale = 4f; cfg.waterLevel = 2f; }      // flat
