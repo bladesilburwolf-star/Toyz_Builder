@@ -27,3 +27,5 @@ Place `assets/` next to this folder (same layout as WorldGen / Raylib assets).
 - run bat optimized for performance
 - towns, dungeons, and graveyards all expanded
 - collision and artifacts issues addressed
+-swim physics and survival early
+- dungeons variety, water systems, and early caves
