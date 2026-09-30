@@ -141,6 +141,7 @@ public final class AssetBank {
         if (u.contains("CRYSTAL")) return get(Slot.CRYSTAL);
         if (u.contains("DIAMOND")) return get(Slot.DIAMOND);
         if (u.contains("QUARTZ")) return get(Slot.QUARTZ);
+        if (u.contains("GRASS")) return get(Slot.GRASS);
         if (u.contains("MAGMA")) return get(Slot.MAGMA);
         if (u.contains("MAGNECITE") || u.contains("MAGNETIX")) return get(Slot.MAGNECITE);
         if (u.contains("HOUSE") || u.contains("WALL")) return get(Slot.HOUSE_WALL);

@@ -8,6 +8,8 @@ import com.toyzbuilder.world.TreeField;
 import com.toyzbuilder.world.StructureGenerator;
 import com.toyzbuilder.world.StructureSite;
 import com.toyzbuilder.world.TerrainChunks;
+import com.toyzbuilder.world.CavernFeatures;
+import com.toyzbuilder.world.SkyIslandsFeatures;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
@@ -32,6 +34,8 @@ public class Window {
     private TreeField treeField;
     private TreeMeshes treeMeshes;
     private com.toyzbuilder.world.LandscapeFeatures landscapeFeatures;
+    private CavernFeatures cavernFeatures;
+    private SkyIslandsFeatures skyIslandsFeatures;
     private StructureGenerator structureGen;
     private WorldMapUI worldMap;
     private Hud hud;
@@ -62,6 +66,8 @@ public class Window {
         if (terrainChunks != null) terrainChunks.cleanup();
         if (terrainMesh != null) terrainMesh.cleanup();
         if (waterMesh != null) waterMesh.cleanup();
+        if (cavernFeatures != null) cavernFeatures.cleanup();
+        if (skyIslandsFeatures != null) skyIslandsFeatures.cleanup();
         if (playerMesh != null) playerMesh.cleanup();
         if (hud != null) hud.cleanup();
         if (renderer != null) renderer.cleanup();
@@ -99,6 +105,8 @@ public class Window {
         treeMeshes = new TreeMeshes();
         treeField = new TreeField();
         landscapeFeatures = new com.toyzbuilder.world.LandscapeFeatures();
+        cavernFeatures = new CavernFeatures();
+        skyIslandsFeatures = new SkyIslandsFeatures();
         structureGen = new StructureGenerator();
         worldMap = new WorldMapUI();
 
@@ -116,6 +124,8 @@ public class Window {
         terrainChunks.build(terrain);
         waterMesh = buildWaterMesh(terrain);
         landscapeFeatures.generate(terrain, cfg.seed);
+        cavernFeatures.generate(terrain, cfg.seed);
+        skyIslandsFeatures.generate(terrain, cfg.seed, false);
         structureGen.generate(terrain, cfg.seed);
         playerMesh = buildPlayerMesh();
         double ms = (System.nanoTime() - t0) / 1e6;
@@ -130,7 +140,7 @@ public class Window {
         world = new World(terrain);
         world.getController().setWaterLevel(cfg.waterLevel);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
-        world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        applyStructuresAndDepths();
         loadSpawnersFromStructures();
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
         world.getController().setPlayerPos(0, Math.max(spawnGround, cfg.waterLevel), 0);
@@ -480,6 +490,11 @@ public class Window {
             boolean underwater = cam.getY() < waterLevel
                     && WorldGenerator.sampleHeight(terrain, cam.getX(), cam.getZ()) < waterLevel;
             if (pc.isSwimming()) underwater = true;
+            boolean inDepths = pc.getPlayerPos().y < com.toyzbuilder.world.CavernFeatures.DEPTHS_Y + 40f;
+            boolean inSky = skyIslandsFeatures != null && skyIslandsFeatures.isEnabled()
+                    && pc.getPlayerPos().y > com.toyzbuilder.world.SkyIslandsFeatures.SKY_Y - 25f;
+            // Critical: heightfield must not pull the player out of Depths / Sky zones
+            world.getCollision().setIgnoreTerrainFloor(inDepths || inSky);
 
             float sr = 0.48f, sg = 0.64f, sb = 0.92f;
             if (under == WorldGenerator.Biome.DESERT || under == WorldGenerator.Biome.SAVANNA) {
@@ -489,9 +504,13 @@ public class Window {
             } else if (under == WorldGenerator.Biome.VOLCANIC) {
                 sr = 0.22f; sg = 0.18f; sb = 0.20f;
             }
-            if (underwater) {
+            if (inDepths) {
+                sr = 0.01f; sg = 0.01f; sb = 0.02f; // near-black Depths void
+            } else if (inSky) {
+                sr = 0.55f; sg = 0.72f; sb = 0.95f; // bright sky island air
+            } else if (underwater) {
                 if (under == WorldGenerator.Biome.CORAL_REEF) {
-                    sr = 0.05f; sg = 0.25f; sb = 0.35f; // teal tropical
+                    sr = 0.05f; sg = 0.25f; sb = 0.35f;
                 } else if (under == WorldGenerator.Biome.LAKE) {
                     sr = 0.04f; sg = 0.15f; sb = 0.22f;
                 } else {
@@ -503,15 +522,30 @@ public class Window {
 
             float aspect = 1280f / 720f;
             // fog fades into the sky colour we just cleared with
-            renderer.beginFrame(cam, aspect, settings, sr, sg, sb, underwater);
+            renderer.beginFrame(cam, aspect, settings, sr, sg, sb, underwater || inDepths);
             float rdist = settings.renderDistanceIsMax() ? 400f : settings.renderDistance();
-            terrainChunks.render(renderer, assets, cam.getX(), cam.getY(), cam.getZ(), rdist);
-            renderer.renderTrees(treeField, treeMeshes, assets);
-            enemies.render(renderer);
-            renderer.renderLandscapeFeatures(landscapeFeatures, assets);
-            // structure parts — textured when texKey set; two-sided walls keep both faces
+            if (!inDepths) {
+                terrainChunks.render(renderer, assets, cam.getX(), cam.getY(), cam.getZ(), rdist);
+                renderer.renderCaverns(cavernFeatures, assets, rdist);
+                renderer.renderTrees(treeField, treeMeshes, assets);
+                enemies.render(renderer);
+                renderer.renderLandscapeFeatures(landscapeFeatures, assets);
+                if (waterMesh != null) renderer.renderWater(waterMesh, assets, timeSec);
+            } else {
+                // Depths-only: no surface mesh — solid rock structures only
+                enemies.render(renderer);
+            }
+            // structure + Depths / Sky parts
             Mesh cube = StructureGenerator.unitCube();
-            for (StructureGenerator.Part pt : structureGen.getParts()) {
+            java.util.List<StructureGenerator.Part> drawParts = new java.util.ArrayList<>();
+            if (inDepths) {
+                if (cavernFeatures != null) drawParts.addAll(cavernFeatures.getParts());
+            } else {
+                drawParts.addAll(structureGen.getParts());
+                if (cavernFeatures != null) drawParts.addAll(cavernFeatures.getParts());
+                if (skyIslandsFeatures != null) drawParts.addAll(skyIslandsFeatures.getParts());
+            }
+            for (StructureGenerator.Part pt : drawParts) {
                 Texture tex = (pt.texKey != null) ? assets.forKey(pt.texKey) : null;
                 if (tex != null) {
                     renderer.renderTextured(cube, pt.x, pt.y, pt.z, pt.sx, pt.sy, pt.sz, pt.yaw,
@@ -550,8 +584,6 @@ public class Window {
                 renderer.renderDebugLines(lines, 0.2f, 1f, 0.3f, 1f);
             }
 
-            renderer.renderWater(waterMesh, assets, timeSec);
-
             // ---- HUD overlay ----
             // map / compass player pose
             var mapCam = world.getCamera();
@@ -574,7 +606,7 @@ public class Window {
                         1, 1, 1, 1);
                 hud.text(10, 42, (pc.isThirdPerson() ? "[3rd Person]" : "[1st Person]")
                         + "  " + (pc.isFlying() ? "[FLYING]" : "[WALK]")
-                        + (underwater ? "  [UNDERWATER]" : ""),
+                        + (inDepths ? "  [DEPTHS]" : (inSky ? "  [SKY ISLANDS]" : (underwater ? "  [UNDERWATER]" : ""))),
                         underwater ? 0.4f : 1f, underwater ? 0.8f : 1f, 1f, 1f);
                 String help = survival.isCreative()
                         ? "TAB edit  E inv  WASD  Space jump  Ctrl sprint  Shift sneak  F fly  F5/C cam  F3 debug  R regen"
@@ -707,6 +739,17 @@ public class Window {
         builderUI.setInventoryOpen(false);
     }
 
+
+    private void applyStructuresAndDepths() {
+        java.util.ArrayList<StructureGenerator.Part> all = new java.util.ArrayList<>(structureGen.getParts());
+        if (cavernFeatures != null) all.addAll(cavernFeatures.getParts());
+        if (skyIslandsFeatures != null) all.addAll(skyIslandsFeatures.getParts());
+        java.util.ArrayList<com.toyzbuilder.world.Warp> warps = new java.util.ArrayList<>(structureGen.getWarps());
+        if (cavernFeatures != null) warps.addAll(cavernFeatures.getWarps());
+        if (skyIslandsFeatures != null) warps.addAll(skyIslandsFeatures.getWarps());
+        world.setStructures(all, warps);
+    }
+
     private void loadSpawnersFromStructures() {
         enemies.clear();
         for (float[] m : structureGen.getSpawnerMarks()) {
@@ -725,16 +768,20 @@ public class Window {
         terrain = new WorldGenerator(cfg).generate();
         if (terrainChunks != null) terrainChunks.cleanup();
         if (waterMesh != null) waterMesh.cleanup();
+        if (cavernFeatures != null) cavernFeatures.cleanup();
+        if (skyIslandsFeatures != null) skyIslandsFeatures.cleanup();
         terrainChunks = new TerrainChunks();
         terrainChunks.build(terrain);
         waterMesh = buildWaterMesh(terrain);
         landscapeFeatures.generate(terrain, cfg.seed);
+        cavernFeatures.generate(terrain, cfg.seed);
+        skyIslandsFeatures.generate(terrain, cfg.seed, mainMenu.skyIslands);
         structureGen.generate(terrain, cfg.seed);
         treeField.generate(terrain, cfg.seed);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
         world.setTerrain(terrain);
         world.getController().setWaterLevel(cfg.waterLevel);
-        world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        applyStructuresAndDepths();
         loadSpawnersFromStructures();
         editor.setTerrain(terrain);
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
@@ -755,12 +802,16 @@ public class Window {
         world.setTerrain(terrain);
         editor.setTerrain(terrain);
         if (waterMesh != null) waterMesh.cleanup();
+        if (cavernFeatures != null) cavernFeatures.cleanup();
+        if (skyIslandsFeatures != null) skyIslandsFeatures.cleanup();
         waterMesh = buildWaterMesh(terrain);
         treeField.generate(terrain, cfg.seed);
         landscapeFeatures.generate(terrain, cfg.seed);
+        cavernFeatures.generate(terrain, cfg.seed);
+        skyIslandsFeatures.generate(terrain, cfg.seed, mainMenu.skyIslands);
         structureGen.generate(terrain, cfg.seed);
         worldMap.setMarkers(structureGen.getSites(), terrain.size);
-        world.setStructures(structureGen.getParts(), structureGen.getWarps());
+        applyStructuresAndDepths();
         loadSpawnersFromStructures();
         float spawnGround = WorldGenerator.sampleHeight(terrain, 0, 0);
         world.getController().setPlayerPos(0, Math.max(spawnGround, cfg.waterLevel), 0);

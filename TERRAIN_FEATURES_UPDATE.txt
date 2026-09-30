@@ -1,0 +1,15 @@
+Toyz Builder terrain expansion update
+
+Implemented:
+- deeper/wider procedural ravines
+- sharp cliff/terrace carving
+- natural land-bridge generation across shallow/noisy water gaps
+- deeper cave-mouth carving
+- real underground cavern tube/chamber geometry using textured rock
+- real vertical waterfall geometry using the water texture instead of a cube placeholder
+- cavern generation is deterministic from world seed
+- cavern cleanup/regeneration lifecycle
+- rock cavern rendering is double-sided and tinted darker to read as interior rock
+
+Cave note:
+The current terrain representation remains a heightfield, so the cavern entrances are formed by terrain depressions and the enclosed cavern geometry is layered underneath them. Full arbitrary overhang/undercut terrain requires the later 3D terrain/volume streaming step.

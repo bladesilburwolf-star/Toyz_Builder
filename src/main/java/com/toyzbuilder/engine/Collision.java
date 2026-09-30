@@ -47,6 +47,9 @@ public final class Collision {
     private WorldGenerator.Result terrain;
     private final List<AABB> solids = new ArrayList<>();
     private final List<AABB> structureSolids = new ArrayList<>();
+    /** When true (Depths / Sky zones), do not snap feet to heightfield. */
+    private boolean ignoreTerrainFloor = false;
+
     private boolean debugDraw = false;
 
     public void setTerrain(WorldGenerator.Result terrain) {
@@ -68,6 +71,10 @@ public final class Collision {
     public boolean isDebugDraw() { return debugDraw; }
     public void setDebugDraw(boolean on) { debugDraw = on; }
     public void toggleDebugDraw() { debugDraw = !debugDraw; }
+
+    public void setIgnoreTerrainFloor(boolean v) { ignoreTerrainFloor = v; }
+    public boolean isIgnoreTerrainFloor() { return ignoreTerrainFloor; }
+
 
     public float groundHeight(float x, float z) {
         if (terrain == null) return 0f;
@@ -128,16 +135,18 @@ public final class Collision {
         body.maxY += dy;
         boolean onSolid = resolveAxisY(body);
 
-        // Terrain floor under feet (sample center XZ)
-        float cx = (body.minX + body.maxX) * 0.5f;
-        float cz = (body.minZ + body.maxZ) * 0.5f;
-        float ground = groundHeight(cx, cz);
+        // Terrain floor under feet — skipped in Depths/Sky so structure floors own collision
         boolean onTerrain = false;
-        if (body.minY <= ground) {
-            float raise = ground - body.minY;
-            body.minY += raise;
-            body.maxY += raise;
-            onTerrain = true;
+        if (!ignoreTerrainFloor) {
+            float cx = (body.minX + body.maxX) * 0.5f;
+            float cz = (body.minZ + body.maxZ) * 0.5f;
+            float ground = groundHeight(cx, cz);
+            if (body.minY <= ground) {
+                float raise = ground - body.minY;
+                body.minY += raise;
+                body.maxY += raise;
+                onTerrain = true;
+            }
         }
 
         return onTerrain || onSolid;

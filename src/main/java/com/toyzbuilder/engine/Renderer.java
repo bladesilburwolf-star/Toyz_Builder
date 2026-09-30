@@ -30,6 +30,7 @@ public class Renderer {
     private static final float LIGHT_X = 0.4f, LIGHT_Y = -1f, LIGHT_Z = 0.3f;
 
     private ShaderProgram terrainFast, terrainFancy, waterShader, flatShader, modelShader, texMeshShader;
+    private Mesh waterfallMesh;
 
     // ---- per-frame state ----
     private GameSettings gs = GameSettings.get();
@@ -143,11 +144,13 @@ public class Renderer {
             layout(location = 0) in vec3 aPos;
             uniform mat4 projection;
             uniform mat4 view;
+            uniform mat4 model;
+            uniform float vertical;
             out vec2 vUV;
             out float vFog;
             void main() {
-                vUV = aPos.xz * 0.05;
-                gl_Position = projection * view * vec4(aPos, 1.0);
+                vUV = vertical > 0.5 ? aPos.xy * 0.08 : aPos.xz * 0.05;
+                gl_Position = projection * view * model * vec4(aPos, 1.0);
                 vFog = gl_Position.w;
             }
             """;
@@ -278,6 +281,13 @@ public class Renderer {
         }
         waterShader.bind();
         waterShader.set1i("texWater", 0);
+        waterfallMesh = new Mesh(
+                new float[] {
+                        -0.5f, 0f, 0f,  0.5f, 0f, 0f,
+                         0.5f, 1f, 0f, -0.5f, 1f, 0f
+                },
+                new int[] {0, 1, 2, 0, 2, 3});
+
         texMeshShader.bind();
         texMeshShader.set1i("uTex", 0);
         texMeshShader.unbind();
@@ -408,6 +418,9 @@ public class Renderer {
         cull(false);
         assets.get(AssetBank.Slot.WATER).bind(0);
         lastTex = null;
+        tmpModel.identity().get(modelArr);
+        waterShader.setMat4("model", modelArr);
+        waterShader.set1f("vertical", 0f);
         waterShader.set1f("time", time);
         waterShader.set1f("uAlpha", blend ? 0.55f : 1f);
 
@@ -420,6 +433,43 @@ public class Renderer {
         if (blend) {
             GL11.glDepthMask(true);
             GL11.glDisable(GL11.GL_BLEND);
+        }
+    }
+
+
+    public void renderWaterfall(float x, float y, float z, float width, float height,
+                                float yawDeg, AssetBank assets, float time) {
+        if (waterfallMesh == null || assets == null) return;
+        use(waterShader);
+        cull(false);
+        assets.get(AssetBank.Slot.WATER).bind(0);
+        lastTex = null;
+        setModelMatrix(waterShader, x, y, z, width, height, 1f, yawDeg);
+        waterShader.set1f("vertical", 1f);
+        waterShader.set1f("time", time);
+        waterShader.set1f("uAlpha", gs.transparency ? 0.62f : 1f);
+        boolean blend = gs.transparency;
+        if (blend) {
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDepthMask(false);
+        }
+        waterfallMesh.render();
+        if (blend) {
+            GL11.glDepthMask(true);
+            GL11.glDisable(GL11.GL_BLEND);
+        }
+    }
+
+    public void renderCaverns(com.toyzbuilder.world.CavernFeatures field,
+                              AssetBank assets, float maxDist) {
+        if (field == null || assets == null) return;
+        Texture rock = assets.get(AssetBank.Slot.ROCK);
+        for (var c : field.getCaverns()) {
+            if (!visible(c.x, c.y, c.z + c.length * 0.5f, c.radius + c.length * 0.5f, maxDist))
+                continue;
+            renderTextured(c.mesh, c.x, c.y, c.z, 1f, 1f, 1f, c.yaw,
+                    rock, 0.62f, 0.58f, 0.52f, 1f, true);
         }
     }
 
@@ -548,7 +598,6 @@ public class Renderer {
                 case SALT_CHUNK -> drawPropCube(f, 0.92f, 0.90f, 0.85f, 0.6f, 0.4f, 0.6f);
                 case CORAL_PILLAR -> drawPropCube(f, 0.95f, 0.35f, 0.55f, 0.35f, 2.4f, 0.35f);
                 case CORAL_FAN -> drawPropCube(f, 0.25f, 0.75f, 0.65f, 0.9f, 0.55f, 0.25f);
-                case WATERFALL -> drawPropCube(f, 0.35f, 0.65f, 0.95f, 0.5f, 2.5f, 0.15f);
                 default -> drawPropCube(f, 0.45f, 0.42f, 0.38f);
             }
         }
@@ -676,6 +725,7 @@ public class Renderer {
     }
 
     public void cleanup() {
+        if (waterfallMesh != null) waterfallMesh.cleanup();
         if (debugVbo != 0) GL15.glDeleteBuffers(debugVbo);
         if (debugVao != 0) GL30.glDeleteVertexArrays(debugVao);
     }

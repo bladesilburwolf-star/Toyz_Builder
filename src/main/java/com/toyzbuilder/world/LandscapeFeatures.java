@@ -40,7 +40,6 @@ public final class LandscapeFeatures {
 
         placePass(terrain, rng, half, water, 14f, true);
         placePass(terrain, rng, half, water, 9f, false);
-        placeWaterfalls(terrain, rng, half, water);
 
         System.out.println("[LandscapeFeatures] placed " + features.size() + " surface features");
     }
@@ -75,34 +74,6 @@ public final class LandscapeFeatures {
                         rng.nextFloat() * 360f, kind));
             }
         }
-    }
-
-    private void placeWaterfalls(WorldGenerator.Result terrain, Random rng,
-                                 float half, float water) {
-        float step = 12f;
-        int n = 0;
-        for (float z = -half + step; z < half - step; z += step) {
-            for (float x = -half + step; x < half - step; x += step) {
-                float y = WorldGenerator.sampleHeight(terrain, x, z);
-                if (y < water + 4f) continue;
-                float[][] dirs = {{step, 0}, {-step, 0}, {0, step}, {0, -step}};
-                for (float[] d : dirs) {
-                    float y2 = WorldGenerator.sampleHeight(terrain, x + d[0], z + d[1]);
-                    if (y - y2 < 5f) continue;
-                    if (y2 > water + 3f) continue;
-                    float wx = x + d[0] * 0.35f;
-                    float wz = z + d[1] * 0.35f;
-                    float bot = Math.max(water, y2);
-                    float h = y - bot;
-                    if (h < 4f) continue;
-                    float scale = h / 2.5f;
-                    features.add(new Instance(wx, bot, wz, scale, rng.nextFloat() * 360f, Kind.WATERFALL));
-                    n++;
-                    break;
-                }
-            }
-        }
-        System.out.println("[LandscapeFeatures] waterfalls=" + n);
     }
 
     private static float rockChance(WorldGenerator.Biome b, float slope) {
@@ -183,7 +154,6 @@ public final class LandscapeFeatures {
             case BOULDER_M -> s * 1.05f;
             case CACTUS, ICE_SPIKE, PILLAR, REED, CORAL_PILLAR -> s * 1.35f;
             case CORAL_FAN -> s * 0.9f;
-            case WATERFALL -> s;
             case DEAD_LOG, DRIFTWOOD -> s * 1.1f;
             case MUSHROOM_CAP -> s * 0.9f;
             case BUSH, STUMP -> s * 0.85f;

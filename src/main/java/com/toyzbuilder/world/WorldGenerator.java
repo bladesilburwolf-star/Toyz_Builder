@@ -1,5 +1,7 @@
 package com.toyzbuilder.world;
 
+import java.util.Random;
+
 /**
  * Multi-biome continuous heightfield for the LWJGL exploration prototype.
  * Tuned for performance: single dense mesh, deterministic seed, no piece spam.
@@ -47,6 +49,7 @@ public final class WorldGenerator {
         ASHLANDS(0.24f, 0.22f, 0.20f),
         CRYSTAL_FIELDS(0.42f, 0.62f, 0.72f),
         OBSIDIAN_WASTES(0.10f, 0.08f, 0.10f),
+        CHASM(0.22f, 0.06f, 0.32f),
         SALT_FLATS(0.78f, 0.76f, 0.68f),
         OASIS(0.30f, 0.58f, 0.20f),
         STEPPE(0.48f, 0.54f, 0.25f);
@@ -75,12 +78,14 @@ public final class WorldGenerator {
         public final Biome[] biomes;    // resolution^2
         public final float size;        // currently generated terrain patch extent
         public final float worldSize;  // logical world extent
-        public Result(Settings s, float[] h, Biome[] b) {
+        public final java.util.List<ChasmSite> chasms;
+        public Result(Settings s, float[] h, Biome[] b, java.util.List<ChasmSite> chasms) {
             this.settings = s;
             this.heights = h;
             this.biomes = b;
             this.size = (s.resolution - 1) * s.spacing;
             this.worldSize = s.worldSize;
+            this.chasms = chasms != null ? new java.util.ArrayList<>(chasms) : java.util.List.of();
         }
     }
 
@@ -159,9 +164,12 @@ public final class WorldGenerator {
 
         // Vertical features: ravines + cave mouths carved into the heightfield
         carveRavines(h, bio, n, half);
+        carveCliffsAndTerraces(h, bio, n, half);
+        carveLandBridges(h, bio, n, half);
         carveCaveMouths(h, bio, n, half);
+        carveChasms(h, bio, n, half);
 
-        return new Result(cfg, h, bio);
+        return new Result(cfg, h, bio, lastChasms);
     }
 
     /**
@@ -183,15 +191,15 @@ public final class WorldGenerator {
                 // Secondary branch canyons
                 float line2 = Math.abs(fbm(x * 0.0045f - 90, z * 0.0045f + 220, 2, 2.1f, 0.5f) - 0.5f);
                 float nearest = Math.min(line, line2 * 1.15f);
-                if (nearest > 0.055f) continue;
+                if (nearest > 0.075f) continue;
 
                 // Prefer highlands / mountains for dramatic cuts
                 float ridge = fbm(x * 0.01f + 9, z * 0.01f + 9, 2, 2.0f, 0.5f);
                 if (h[i] < cfg.waterLevel + 3f && ridge < 0.45f) continue;
 
-                float t = 1f - nearest / 0.055f; // 1 at center
+                float t = 1f - nearest / 0.075f; // 1 at center
                 t = t * t;
-                float depth = (10f + ridge * 14f) * t; // up to ~24 units deep
+                float depth = (16f + ridge * 24f) * t; // deep gorges up to ~40 units
                 // Keep a walkable floor slightly above a deep pit
                 float floor = Math.max(cfg.waterLevel - 2f, h[i] - depth);
                 if (floor < h[i] - 0.5f) {
@@ -236,7 +244,7 @@ public final class WorldGenerator {
 
                 float strength = (cave - 0.72f) / 0.28f;
                 strength = strength * strength;
-                float depth = (4f + strength * 10f);
+                float depth = (7f + strength * 18f);
                 float floor = Math.max(cfg.waterLevel + 0.5f, h[i] - depth);
                 if (floor < h[i] - 0.8f) {
                     h[i] = floor;
@@ -248,6 +256,155 @@ public final class WorldGenerator {
             }
         }
         System.out.println("[Terrain] cave-mouth cells carved=" + carved);
+    }
+
+
+    /** Sharp plateau breaks and cliff faces. Uses stepped erosion bands instead of a flat noise dent. */
+    private void carveCliffsAndTerraces(float[] h, Biome[] bio, int n, float half) {
+        float sp = cfg.spacing;
+        int carved = 0;
+        for (int iz = 1; iz < n - 1; iz++) {
+            for (int ix = 1; ix < n - 1; ix++) {
+                int i = iz * n + ix;
+                if (bio[i] == Biome.OCEAN || bio[i] == Biome.BEACH || h[i] < cfg.waterLevel + 6f) continue;
+                float x = ix * sp - half, z = iz * sp - half;
+                float plateau = fbm(x * 0.0032f + 611, z * 0.0032f - 77, 3, 2.0f, 0.5f);
+                float edge = Math.abs(plateau - 0.5f);
+                if (edge > 0.035f) continue;
+                float side = fbm(x * 0.012f + 71, z * 0.012f + 131, 2, 2.0f, 0.5f);
+                float t = 1f - edge / 0.035f;
+                t *= t;
+                float drop = (4f + side * 10f) * t;
+                h[i] -= drop;
+                if (drop > 2.0f) {
+                    carved++;
+                    if (h[i] > cfg.waterLevel + 2f && bio[i] != Biome.VOLCANIC)
+                        bio[i] = Biome.CRAG;
+                }
+            }
+        }
+        System.out.println("[Terrain] cliff/terrace cells=" + carved);
+    }
+
+    /** Creates narrow natural land bridges across shallow/noisy water gaps. */
+    private void carveLandBridges(float[] h, Biome[] bio, int n, float half) {
+        float sp = cfg.spacing;
+        int raised = 0;
+        for (int iz = 1; iz < n - 1; iz++) {
+            for (int ix = 1; ix < n - 1; ix++) {
+                int i = iz * n + ix;
+                if (h[i] > cfg.waterLevel + 0.5f) continue;
+                float x = ix * sp - half, z = iz * sp - half;
+                float bridge = fbm(x * 0.0019f + 941, z * 0.0019f - 271, 3, 2.1f, 0.5f);
+                if (bridge < 0.71f) continue;
+                float corridor = fbm(x * 0.009f - 120, z * 0.009f + 350, 2, 2.0f, 0.5f);
+                if (corridor < 0.48f) continue;
+                float left = sampleLocal(h, n, ix - 1, iz);
+                float right = sampleLocal(h, n, ix + 1, iz);
+                float down = sampleLocal(h, n, ix, iz - 1);
+                float up = sampleLocal(h, n, ix, iz + 1);
+                float shore = Math.max(Math.max(left, right), Math.max(down, up));
+                if (shore < cfg.waterLevel + 1f) continue;
+                float lift = Math.min(shore - cfg.waterLevel + 1.5f, 4.5f);
+                h[i] = cfg.waterLevel + lift;
+                bio[i] = Biome.MEADOW;
+                raised++;
+            }
+        }
+        System.out.println("[Terrain] land-bridge cells=" + raised);
+    }
+
+    private static float sampleLocal(float[] h, int n, int ix, int iz) {
+        ix = clamp(ix, 0, n - 1);
+        iz = clamp(iz, 0, n - 1);
+        return h[iz * n + ix];
+    }
+
+    /**
+     * Tears of the Kingdom style chasms: wide circular pits with purple rock walls.
+     * Floor is deep enough that falling in triggers a Depths warp (see CavernFeatures).
+     */
+    /** World-space centers of carved chasms (filled by carveChasms). */
+    public static final class ChasmSite {
+        public final float x, z, radius, floorY, rimY;
+        public ChasmSite(float x, float z, float radius, float floorY, float rimY) {
+            this.x = x; this.z = z; this.radius = radius;
+            this.floorY = floorY; this.rimY = rimY;
+        }
+    }
+
+    private final java.util.ArrayList<ChasmSite> lastChasms = new java.util.ArrayList<>();
+    public java.util.List<ChasmSite> getLastChasms() { return lastChasms; }
+
+    /**
+     * Tears of the Kingdom style chasms — large, deep, purple pits on elevated land.
+     * Floors drop far below the rim so the hole is obvious from the surface.
+     */
+    private void carveChasms(float[] h, Biome[] bio, int n, float half) {
+        lastChasms.clear();
+        float sp = cfg.spacing;
+        Random rng = new Random(cfg.seed ^ 0x43484153L);
+        int count = 4 + rng.nextInt(3); // 4-6 pits
+        int carved = 0;
+        int attempts = 0;
+        while (lastChasms.size() < count && attempts < count * 40) {
+            attempts++;
+            float cx = -half + 50 + rng.nextFloat() * (2 * half - 100);
+            float cz = -half + 50 + rng.nextFloat() * (2 * half - 100);
+            // sample center height — need high ground so the pit reads clearly
+            int six = Math.max(1, Math.min(n - 2, (int) ((cx + half) / sp)));
+            int siz = Math.max(1, Math.min(n - 2, (int) ((cz + half) / sp)));
+            float centerH = h[siz * n + six];
+            if (centerH < cfg.waterLevel + 10f) continue;
+            if (bio[siz * n + six] == Biome.OCEAN || bio[siz * n + six] == Biome.BEACH) continue;
+
+            // keep pits apart
+            boolean near = false;
+            for (ChasmSite s : lastChasms) {
+                float dx = s.x - cx, dz = s.z - cz;
+                if (dx * dx + dz * dz < 55f * 55f) { near = true; break; }
+            }
+            if (near) continue;
+
+            float radius = 16f + rng.nextFloat() * 12f; // 16-28u wide — very visible
+            float depth = 22f + rng.nextFloat() * 16f;  // 22-38u deep
+            float rimY = centerH;
+            float floorY = centerH - depth;
+
+            for (int iz = 0; iz < n; iz++) {
+                for (int ix = 0; ix < n; ix++) {
+                    float x = ix * sp - half;
+                    float z = iz * sp - half;
+                    float dx = x - cx, dz = z - cz;
+                    float d = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (d > radius + 3f) continue;
+                    int i = iz * n + ix;
+                    if (bio[i] == Biome.OCEAN) continue;
+
+                    // Smooth bowl: full depth in inner 40%, taper to rim
+                    float t;
+                    if (d < radius * 0.4f) t = 1f;
+                    else t = 1f - (d - radius * 0.4f) / (radius * 0.6f + 3f);
+                    t = Math.max(0f, t);
+                    t = t * t * (3f - 2f * t); // smoothstep
+
+                    float target = centerH - depth * t;
+                    // Steep cliff ring near rim for silhouette
+                    if (d > radius * 0.85f && d < radius + 1.5f) {
+                        target = Math.min(target, centerH - depth * 0.15f);
+                    }
+                    if (target < h[i] - 0.5f) {
+                        h[i] = target;
+                        bio[i] = Biome.CHASM;
+                        carved++;
+                    }
+                    if (h[i] > rimY) rimY = h[i];
+                    if (h[i] < floorY) floorY = h[i];
+                }
+            }
+            lastChasms.add(new ChasmSite(cx, cz, radius, floorY, rimY));
+        }
+        System.out.println("[Terrain] chasm cells=" + carved + " pits=" + lastChasms.size());
     }
 
     public static float sampleHeight(Result r, float wx, float wz) {
@@ -360,6 +517,7 @@ public final class WorldGenerator {
             case OASIS:      return new float[]{0.65f, 0.25f, 0.00f, 0.10f};
             case ASHLANDS:
             case OBSIDIAN_WASTES: return new float[]{0.00f, 0.05f, 0.00f, 0.95f};
+            case CHASM: return new float[]{0.00f, 0.08f, 0.00f, 0.92f};
             case CRYSTAL_FIELDS: return new float[]{0.15f, 0.00f, 0.20f, 0.65f};
             case SALT_FLATS: return new float[]{0.05f, 0.85f, 0.00f, 0.10f};
             case STEPPE:     return new float[]{0.55f, 0.25f, 0.00f, 0.20f};

@@ -131,7 +131,9 @@ public class PlayerController {
                 ? collision.groundHeight(playerPos.x, playerPos.z) : playerPos.y;
         boolean waterBody = groundH < waterLevel - 0.2f;
         float submerge = waterLevel - playerPos.y;
-        swimming = !flying && waterBody && submerge > 0.35f;
+        // Depths / high sky: no swimming logic
+        boolean verticalZone = playerPos.y < -50f || playerPos.y > 120f;
+        swimming = !flying && !verticalZone && waterBody && submerge > 0.35f;
 
         if (flying) {
             velocityY = 0f;

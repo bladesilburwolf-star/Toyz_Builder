@@ -68,11 +68,13 @@ public class World {
             float dx = p.x - w.x;
             float dz = p.z - w.z;
             if (dx * dx + dz * dz <= w.radius * w.radius
-                    && Math.abs(p.y - w.y) < 2.5f) {
+                    && Math.abs(p.y - w.y) < w.triggerHalfHeight) {
                 controller.setPlayerPos(w.tx, w.ty, w.tz);
                 controller.resyncMouseIfNeeded();
-                warpCooldown = 2.5f;
-                System.out.println("[Warp] " + w.label);
+                // Longer cooldown for zone transitions so enter/exit do not ping-pong
+                warpCooldown = w.label.contains("Depths") || w.label.contains("Sky")
+                        || w.label.contains("Surface") ? 4.0f : 2.5f;
+                System.out.println("[Warp] " + w.label + " -> (" + w.tx + ", " + w.ty + ", " + w.tz + ")");
                 break;
             }
         }
