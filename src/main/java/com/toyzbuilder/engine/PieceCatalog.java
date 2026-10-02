@@ -15,6 +15,7 @@ public final class PieceCatalog {
         BUILD("Doors / Ramps"),
         MAGNETIX("Magnetix"),
         MISC("Misc / Props"),
+        GEAR("Tools / Weapons"),
         ACTORS("Actors");
 
         public final String label;
@@ -116,8 +117,29 @@ public final class PieceCatalog {
         add("RAFT", "Raft", Group.MISC, 2f, 0.3f, 1.2f, true, "raft.glb", 0.55f, 0.40f, 0.22f);
 
         // ---- Actors (editor markers) ----
+        // ---- Tools / Weapons (Morrowind test dummies) ----
+        add("SWORD1", "Sword 1", Group.GEAR, 0.3f, 1.0f, 0.15f, false, "sword1.glb", 0.70f, 0.70f, 0.75f);
+        add("SWORD2", "Sword 2", Group.GEAR, 0.3f, 1.0f, 0.15f, false, "sword2.glb", 0.65f, 0.68f, 0.72f);
+        add("SWORD3", "Sword 3", Group.GEAR, 0.35f, 1.1f, 0.15f, false, "sword3.glb", 0.75f, 0.72f, 0.55f);
+        add("AXE1", "Axe 1", Group.GEAR, 0.5f, 0.9f, 0.2f, false, "axe1.glb", 0.55f, 0.50f, 0.45f);
+        add("AXE2", "Axe 2", Group.GEAR, 0.5f, 0.9f, 0.2f, false, "axe2.glb", 0.50f, 0.48f, 0.42f);
+        add("AXE3", "Axe 3", Group.GEAR, 0.55f, 1.0f, 0.2f, false, "axe3.glb", 0.60f, 0.45f, 0.35f);
+        add("HAMMER1", "Hammer 1", Group.GEAR, 0.45f, 0.85f, 0.25f, false, "hammer1.glb", 0.50f, 0.48f, 0.50f);
+        add("HAMMER2", "Hammer 2", Group.GEAR, 0.45f, 0.85f, 0.25f, false, "hammer2.glb", 0.48f, 0.46f, 0.48f);
+        add("HAMMER3", "Hammer 3", Group.GEAR, 0.5f, 0.9f, 0.3f, false, "hammer3.glb", 0.55f, 0.50f, 0.45f);
+        add("PICK1", "Pickaxe 1", Group.GEAR, 0.45f, 0.9f, 0.2f, false, "pickaxe1.glb", 0.45f, 0.45f, 0.48f);
+        add("PICK2", "Pickaxe 2", Group.GEAR, 0.45f, 0.9f, 0.2f, false, "pickaxe2.glb", 0.42f, 0.44f, 0.46f);
+        add("PICK3", "Pickaxe 3", Group.GEAR, 0.5f, 1.0f, 0.2f, false, "pickaxe3.glb", 0.50f, 0.48f, 0.42f);
+        add("BOWL1", "Bowl", Group.GEAR, 0.5f, 0.25f, 0.5f, false, "bowl1.glb", 0.55f, 0.40f, 0.30f);
+
+        // ---- Actors / mobs (placeable + matches EnemySystem models) ----
         add("SPAWN", "Spawn", Group.ACTORS, 0.8f, 0.2f, 0.8f, false, null, 1.0f, 1.0f, 0.2f);
         add("ENEMY", "Enemy", Group.ACTORS, 0.8f, 1.4f, 0.8f, true, "slime1.glb", 1.0f, 0.31f, 0.31f);
+        add("MOB_RAT", "Rat", Group.ACTORS, 0.7f, 0.5f, 0.9f, true, "rat1.glb", 0.55f, 0.45f, 0.35f);
+        add("MOB_WORM", "Worm", Group.ACTORS, 1.0f, 0.5f, 0.5f, true, "worm1.glb", 0.45f, 0.55f, 0.35f);
+        add("MOB_ZOMBIE", "Zombie", Group.ACTORS, 0.7f, 1.7f, 0.5f, true, "zombie1.glb", 0.35f, 0.45f, 0.30f);
+        add("MOB_GHOST", "Ghost", Group.ACTORS, 0.7f, 1.6f, 0.5f, false, "ghost1.glb", 0.70f, 0.85f, 0.95f);
+        add("MOB_GOLEM", "Golem", Group.ACTORS, 1.2f, 2.2f, 1.0f, true, "golem1.glb", 0.50f, 0.48f, 0.45f);
         add("BOSS", "Boss", Group.ACTORS, 1.6f, 2.6f, 1.6f, true, "boss_ghost.glb", 0.70f, 0.16f, 0.16f);
         add("TORCH", "Torch", Group.ACTORS, 0.25f, 1.2f, 0.25f, false, null, 1.0f, 0.63f, 0.16f);
         add("LIGHT", "Light", Group.ACTORS, 0.3f, 0.3f, 0.3f, false, "lightball.glb", 1.0f, 0.90f, 0.40f);

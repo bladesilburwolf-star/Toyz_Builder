@@ -1,5 +1,6 @@
 package com.toyzbuilder.world;
 
+import com.toyzbuilder.engine.Model;
 import com.toyzbuilder.engine.PlayerController;
 import com.toyzbuilder.engine.PrimitiveMeshes;
 import com.toyzbuilder.engine.Renderer;
@@ -11,20 +12,48 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * First-pass mobs + iron-cage spawners (FF/Minecraft hybrid).
- * Spawners are decorative cages; they respawn mobs up to a cap when clear.
+ * Mobs + iron-cage spawners. Uses Morrowind test-dummy GLBs when present
+ * under assets/models/ or models/ (unit cube fallback).
  */
 public final class EnemySystem {
 
     public enum MobType {
-        SLIME(0.35f, 0.85f, 0.35f, 8f, 0.9f, 3.2f),
-        SKELETON(0.85f, 0.85f, 0.75f, 12f, 1.6f, 2.8f),
-        BAT(0.45f, 0.35f, 0.55f, 6f, 0.7f, 4.5f);
+        // legacy cubes (still valid spawn pool)
+        SLIME(0.35f, 0.85f, 0.35f, 8f, 0.9f, 3.2f, null, 0.9f),
+        SKELETON(0.85f, 0.85f, 0.75f, 12f, 1.6f, 2.8f, null, 0.55f),
+        BAT(0.45f, 0.35f, 0.55f, 6f, 0.7f, 4.5f, null, 0.5f),
+        // Morrowind test dummies
+        RAT(0.55f, 0.45f, 0.35f, 6f, 0.55f, 3.8f, "rat1.glb", 0.7f),
+        WORM(0.45f, 0.55f, 0.35f, 10f, 0.7f, 2.6f, "worm1.glb", 1.1f),
+        ZOMBIE(0.35f, 0.45f, 0.30f, 16f, 1.7f, 2.2f, "zombie1.glb", 1.0f),
+        GHOST(0.70f, 0.85f, 0.95f, 12f, 1.6f, 3.0f, "ghost1.glb", 1.0f),
+        GOLEM(0.50f, 0.48f, 0.45f, 28f, 2.2f, 1.6f, "golem1.glb", 1.4f);
 
         public final float r, g, b, hp, height, speed;
-        MobType(float r, float g, float b, float hp, float height, float speed) {
+        /** Relative path under assets/models/ — null = colored cube. */
+        public final String modelPath;
+        /** Uniform scale applied to the GLB. */
+        public final float modelScale;
+
+        MobType(float r, float g, float b, float hp, float height, float speed,
+                String modelPath, float modelScale) {
             this.r = r; this.g = g; this.b = b;
             this.hp = hp; this.height = height; this.speed = speed;
+            this.modelPath = modelPath;
+            this.modelScale = modelScale;
+        }
+
+        /** Weighted dungeon spawn pick (favors Morrowind dummies). */
+        public static MobType randomDungeon(Random rng) {
+            float u = rng.nextFloat();
+            if (u < 0.22f) return RAT;
+            if (u < 0.40f) return WORM;
+            if (u < 0.58f) return ZOMBIE;
+            if (u < 0.72f) return GHOST;
+            if (u < 0.82f) return GOLEM;
+            if (u < 0.90f) return SLIME;
+            if (u < 0.96f) return SKELETON;
+            return BAT;
         }
     }
 
@@ -75,13 +104,12 @@ public final class EnemySystem {
         float py = player.getPlayerPos().y;
         float pz = player.getPlayerPos().z;
 
-        // spawn ticks
         for (Spawner s : spawners) {
             s.cooldown -= dt;
             if (s.alive >= s.maxAlive) continue;
             if (s.cooldown > 0) continue;
             float dx = s.x - px, dz = s.z - pz;
-            if (dx * dx + dz * dz > 80f * 80f) continue; // only near player
+            if (dx * dx + dz * dz > 80f * 80f) continue;
             float mx = s.x + (rng.nextFloat() - 0.5f) * 2.5f;
             float mz = s.z + (rng.nextFloat() - 0.5f) * 2.5f;
             float my = s.y + 0.2f;
@@ -107,22 +135,22 @@ public final class EnemySystem {
                 m.z += dz * inv * sp;
                 m.yaw = (float) Math.toDegrees(Math.atan2(dx, dz));
             }
-            if (terrain != null) {
+            if (terrain != null && py > -50f) {
                 float gh = WorldGenerator.sampleHeight(terrain, m.x, m.z);
-                if (m.type == MobType.BAT) {
+                if (m.type == MobType.BAT || m.type == MobType.GHOST) {
                     m.y = gh + 2.2f + (float) Math.sin(m.x * 0.3f + m.z) * 0.4f;
                 } else {
                     m.y = gh + 0.05f;
                 }
             }
-            // contact damage
-            if (survival != null && survival.isSurvival() && dist < 1.35f && m.hitCooldown <= 0) {
-                survival.damage(m.type == MobType.SKELETON ? 2f : 1f);
+            if (survival != null && survival.isSurvival() && dist < 1.45f && m.hitCooldown <= 0) {
+                float dmg = switch (m.type) {
+                    case GOLEM -> 3f;
+                    case ZOMBIE, SKELETON -> 2f;
+                    default -> 1f;
+                };
+                survival.damage(dmg);
                 m.hitCooldown = 1.0f;
-            }
-            // player attack — proximity + will expand later with weapons
-            if (dist < 2.2f && player != null) {
-                // left-click handled in Window
             }
             if (m.hp <= 0) {
                 if (m.home != null) m.home.alive = Math.max(0, m.home.alive - 1);
@@ -131,20 +159,17 @@ public final class EnemySystem {
         }
     }
 
-    /** Melee hit from player looking roughly at mob. */
     public boolean tryPlayerAttack(float px, float py, float pz, float yawDeg) {
-        // Match FirstPersonCamera convention (yaw -90 faces -Z)
         float rad = (float) Math.toRadians(yawDeg);
         float fx = (float) Math.cos(rad);
         float fz = (float) Math.sin(rad);
         for (Mob m : mobs) {
             float dx = m.x - px, dz = m.z - pz;
             float dist = (float) Math.sqrt(dx * dx + dz * dz);
-            if (dist > 3.2f) continue;
+            if (dist > 3.4f) continue;
             float dot = (dx * fx + dz * fz) / Math.max(0.01f, dist);
             if (dot < 0.35f) continue;
             m.hp -= 4f;
-            // knockback
             m.x += fx * 0.6f;
             m.z += fz * 0.6f;
             return true;
@@ -155,10 +180,22 @@ public final class EnemySystem {
     public void render(Renderer renderer) {
         var cube = PrimitiveMeshes.uvCube();
         for (Mob m : mobs) {
-            float h = m.type.height;
-            float w = m.type == MobType.SLIME ? 0.9f : 0.55f;
-            renderer.renderMesh(cube, m.x, m.y + h * 0.5f, m.z,
-                    w, h, w, m.type.r, m.type.g, m.type.b, 1f);
+            if (m.type.modelPath != null) {
+                Model mdl = Model.load(m.type.modelPath);
+                float s = m.type.modelScale;
+                float h = m.type.height;
+                // Tint-only; Morrowind test dummies may lack game textures
+                renderer.renderModel(
+                        mdl,
+                        m.x, m.y + h * 0.15f, m.z,
+                        s, s, s, m.yaw,
+                        m.type.r, m.type.g, m.type.b, 1f);
+            } else {
+                float h = m.type.height;
+                float w = m.type == MobType.SLIME ? 0.9f : 0.55f;
+                renderer.renderMesh(cube, m.x, m.y + h * 0.5f, m.z,
+                        w, h, w, m.type.r, m.type.g, m.type.b, 1f);
+            }
         }
     }
 }

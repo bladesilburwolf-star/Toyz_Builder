@@ -565,6 +565,25 @@ public class Window {
                         0.85f, 0.76f, 0.60f, 1f);
             }
 
+            // Held gear from survival hotbar (Morrowind test GLBs)
+            if (!editor.isActive() && survival.isSurvival() && !survivalInv.isOpen()) {
+                SurvivalInventory.Slot hs = survivalInv.selectedSlot();
+                if (hs != null && hs.modelPath != null) {
+                    Model held = Model.load(hs.modelPath);
+                    if (held != null) {
+                        float yaw = cam.getYaw();
+                        float rad = (float) Math.toRadians(yaw);
+                        // slight forward-right of camera eye
+                        float hx = pc.getPlayerPos().x + (float) Math.cos(rad) * 0.55f + (float) Math.sin(rad) * 0.35f;
+                        float hz = pc.getPlayerPos().z + (float) Math.sin(rad) * 0.55f - (float) Math.cos(rad) * 0.35f;
+                        float hy = pc.getPlayerPos().y + (pc.isThirdPerson() ? 1.1f : 1.35f);
+                        float sc = 0.45f;
+                        renderer.renderModel(held, hx, hy, hz, sc, sc, sc, yaw,
+                                hs.r, hs.g, hs.b, 1f);
+                    }
+                }
+            }
+
             // ---- entities (pieces) — textured cubes for blocks; GLB for organic props ----
             for (Entity e : editor.getEntities()) {
                 drawPiece(e.category, e.x, e.y, e.z, e.yaw,
@@ -723,6 +742,8 @@ public class Window {
         return u.contains("BOULDER") || u.contains("DOOR") || u.contains("WINDOW")
                 || u.contains("CHEST") || u.contains("SLIDE") || u.contains("RAFT")
                 || u.contains("ENEMY") || u.contains("BOSS") || u.contains("BALL")
+                || u.contains("SWORD") || u.contains("AXE") || u.contains("HAMMER")
+                || u.contains("PICK") || u.contains("BOWL") || u.contains("MOB_")
                 || u.contains("LOG");
     }
 
@@ -752,12 +773,13 @@ public class Window {
 
     private void loadSpawnersFromStructures() {
         enemies.clear();
+        java.util.Random rng = new java.util.Random(terrain != null ? terrain.settings.seed : 1);
         for (float[] m : structureGen.getSpawnerMarks()) {
-            int ord = (int) m[3];
+            // Prefer Morrowind test-dummy pool for dungeon cages
             com.toyzbuilder.world.EnemySystem.MobType t =
-                    com.toyzbuilder.world.EnemySystem.MobType.values()[
-                            Math.max(0, Math.min(2, ord))];
-            enemies.addSpawner(m[0], m[1], m[2], t, 2 + (ord == 1 ? 1 : 0));
+                    com.toyzbuilder.world.EnemySystem.MobType.randomDungeon(rng);
+            int cap = (t == com.toyzbuilder.world.EnemySystem.MobType.GOLEM) ? 1 : 2;
+            enemies.addSpawner(m[0], m[1], m[2], t, cap);
         }
         System.out.println("[Enemies] spawners=" + enemies.getSpawners().size());
     }

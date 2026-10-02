@@ -11,6 +11,8 @@ public final class SurvivalInventory {
         public String label;
         public int count;
         public float r = 0.6f, g = 0.6f, b = 0.6f;
+        /** Optional GLB under assets/models/ for held-item / future HUD icon. */
+        public String modelPath;
     }
 
     public static final int COLS = 9;
@@ -31,11 +33,19 @@ public final class SurvivalInventory {
 
     public SurvivalInventory() {
         for (int i = 0; i < SIZE; i++) slots[i] = new Slot();
-        // starter kit
-        give("WOOD", "Wood", 16, 0.55f, 0.40f, 0.22f);
-        give("STONE", "Stone", 8, 0.55f, 0.52f, 0.48f);
-        give("FOOD", "Food", 4, 0.85f, 0.35f, 0.25f);
-        give("TORCH", "Torch", 6, 0.95f, 0.75f, 0.25f);
+        // starter kit + Morrowind test gear
+        give("WOOD", "Wood", 16, 0.55f, 0.40f, 0.22f, null);
+        give("STONE", "Stone", 8, 0.55f, 0.52f, 0.48f, null);
+        give("FOOD", "Food", 4, 0.85f, 0.35f, 0.25f, null);
+        give("TORCH", "Torch", 6, 0.95f, 0.75f, 0.25f, null);
+        give("SWORD1", "Sword", 1, 0.70f, 0.70f, 0.75f, "sword1.glb");
+        give("AXE1", "Axe", 1, 0.55f, 0.50f, 0.45f, "axe1.glb");
+        give("PICK1", "Pickaxe", 1, 0.45f, 0.45f, 0.48f, "pickaxe1.glb");
+        give("HAMMER1", "Hammer", 1, 0.50f, 0.48f, 0.50f, "hammer1.glb");
+    }
+
+    public void give(String id, String label, int count, float r, float g, float b) {
+        give(id, label, count, r, g, b, null);
     }
 
     public boolean isOpen() { return open; }
@@ -47,11 +57,11 @@ public final class SurvivalInventory {
     }
     public Slot[] slots() { return slots; }
 
-    public void give(String id, String label, int count, float r, float g, float b) {
-        // stack into existing
+    public void give(String id, String label, int count, float r, float g, float b, String modelPath) {
         for (Slot s : slots) {
             if (id.equals(s.id)) {
                 s.count += count;
+                if (s.modelPath == null) s.modelPath = modelPath;
                 return;
             }
         }
@@ -61,9 +71,15 @@ public final class SurvivalInventory {
                 s.label = label;
                 s.count = count;
                 s.r = r; s.g = g; s.b = b;
+                s.modelPath = modelPath;
                 return;
             }
         }
+    }
+
+    /** Currently selected hotbar item (may be empty). */
+    public Slot selectedSlot() {
+        return slots[COLS * ROWS + selectedHot];
     }
 
     public void draw(Hud hud, int screenW, int screenH) {
@@ -150,11 +166,11 @@ public final class SurvivalInventory {
                     Slot a = slots[idx];
                     Slot b = slots[hot];
                     String tid = a.id; String tl = a.label; int tc = a.count;
-                    float tr = a.r, tg = a.g, tb = a.b;
+                    float tr = a.r, tg = a.g, tb = a.b; String tm = a.modelPath;
                     a.id = b.id; a.label = b.label; a.count = b.count;
-                    a.r = b.r; a.g = b.g; a.b = b.b;
+                    a.r = b.r; a.g = b.g; a.b = b.b; a.modelPath = b.modelPath;
                     b.id = tid; b.label = tl; b.count = tc;
-                    b.r = tr; b.g = tg; b.b = tb;
+                    b.r = tr; b.g = tg; b.b = tb; b.modelPath = tm;
                     return;
                 }
             }
